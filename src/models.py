@@ -92,3 +92,43 @@ class ProcessingError(BaseModel):
     source_file: str
     stage: Literal["parse", "extract", "score"]
     message: str
+
+
+class BiasVariant(BaseModel):
+    """One mutated version of a resume, re-scored to probe for demographic drift."""
+
+    label: str = Field(
+        description="Short identifier for this variant, e.g. 'name_female_ethnic'.",
+    )
+    swapped_field: Literal["name", "grad_year", "location"]
+    swapped_value: str = Field(
+        description="The actual value substituted into the candidate profile.",
+    )
+    scores: ScoreReport
+
+
+class BiasAuditReport(BaseModel):
+    """
+    Collected drift analysis across demographic variants for one candidate.
+
+    baseline holds the original scores. variants holds re-scored copies with
+    individual signals swapped. flagged is True when any dimension drifts more
+    than drift_threshold points from baseline.
+    """
+
+    baseline: ScoreReport
+    variants: list[BiasVariant]
+    drift_threshold: int = Field(
+        default=10,
+        description="Max allowed point difference before a variant is flagged.",
+    )
+    max_score_drift: float = Field(
+        description="Largest absolute score delta observed across all variants and dimensions.",
+    )
+    flagged: bool = Field(
+        description="True if any variant exceeded drift_threshold on any dimension.",
+    )
+    flag_reason: str | None = Field(
+        default=None,
+        description="Plain-English explanation of what drifted and by how much.",
+    )

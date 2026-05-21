@@ -14,7 +14,7 @@ Two outputs:
 import json
 from pathlib import Path
 
-from src.models import ProcessingError, ScoredCandidate
+from src.models import BiasAuditReport, ProcessingError, ScoredCandidate
 
 Result = ScoredCandidate | ProcessingError
 
@@ -37,10 +37,48 @@ def write_json(results: list[Result], path: str | Path) -> None:
     Path(path).write_text(json.dumps(payload, indent=2))
 
 
+def _bias_drift_table(audit: BiasAuditReport) -> list[str]:
+    """Render the bias audit as a markdown drift table for one candidate."""
+    dims = ("skills_match", "experience_match", "role_relevance", "overall_fit")
+    headers = ("skills", "experience", "role", "overall", "max Δ")
+
+    lines: list[str] = []
+    flag_label = "FLAGGED" if audit.flagged else "OK"
+    lines.append(f"**Bias audit** — max drift {audit.max_score_drift:.0f} pts · {flag_label}")
+    lines.append("")
+    lines.append(f"| Variant | {' | '.join(headers)} |")
+    lines.append(f"| --- | {' | '.join(['---'] * len(headers))} |")
+
+    base_scores = {d: getattr(audit.baseline, d).score for d in dims}
+    base_cells = " | ".join(str(base_scores[d]) for d in dims)
+    lines.append(f"| baseline | {base_cells} | — |")
+
+    for v in audit.variants:
+        cells: list[str] = []
+        max_delta = 0
+        for d in dims:
+            base = base_scores[d]
+            var = getattr(v.scores, d).score
+            delta = var - base
+            max_delta = max(max_delta, abs(delta))
+            cell = str(var)
+            if abs(delta) > audit.drift_threshold:
+                cell = f"**{var}**"
+            cells.append(cell)
+        lines.append(f"| {v.label} | {' | '.join(cells)} | {max_delta} |")
+
+    if audit.flag_reason:
+        lines.append("")
+        lines.append(f"> {audit.flag_reason}")
+
+    return lines
+
+
 def write_markdown(
     results: list[Result],
     path: str | Path,
     jd_path: str | Path,
+    audits: dict[str, BiasAuditReport] | None = None,
 ) -> None:
     """Write a markdown report: ranked table + per-candidate breakdowns + errors."""
 
@@ -91,6 +129,10 @@ def write_markdown(
             lines.append("")
             for gap in c.gaps:
                 lines.append(f"- _{gap.category}_ — {gap.detail}")
+            lines.append("")
+
+        if audits and c.source_file in audits:
+            lines.extend(_bias_drift_table(audits[c.source_file]))
             lines.append("")
 
     if errors:
