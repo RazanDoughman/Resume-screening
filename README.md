@@ -162,6 +162,8 @@ and re-run to experiment.
 
 ## Run
 
+Basic run — score all resumes against the job description:
+
 ```bash
 python main.py \
     --jd sample_data/sample_jd.txt \
@@ -169,15 +171,37 @@ python main.py \
     --output output/
 ```
 
+With bias audit — re-scores each candidate with demographic signals swapped
+and reports score drift per dimension:
+
+```bash
+python main.py \
+    --jd sample_data/sample_jd.txt \
+    --resumes sample_data/resumes/ \
+    --bias-audit
+```
+
+With both self-critique and bias audit:
+
+```bash
+python main.py \
+    --jd sample_data/sample_jd.txt \
+    --resumes sample_data/resumes/ \
+    --self-critique \
+    --bias-audit
+```
+
 Flags:
 
 - `--model MODEL_ID` — override the Claude model (default: `claude-sonnet-4-6`)
+- `--output DIR` — override the output directory (default: `./output`)
 - `--self-critique` — add one more LLM call per resume that reviews and
   may revise the scores. +1 call per resume.
 - `--bias-audit` — re-score each candidate with demographic signals swapped
-  (name, graduation year) and report score drift. Adds one LLM call per
-  swap variant per resume (5 variants by default: 4 name, 1 grad year).
-  Pass `swaps=LOCATION_SWAPS` to `run_bias_audit()` to include location.
+  (name, graduation year) and report score drift. Adds 5 extra LLM calls per
+  resume (4 name variants covering gender × ethnicity + 1 grad year variant
+  probing age bias). Pass `swaps=LOCATION_SWAPS` to `run_bias_audit()` to
+  also include location variants.
 
 Outputs:
 
