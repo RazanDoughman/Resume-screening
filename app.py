@@ -5,46 +5,57 @@ import streamlit as st
 from dotenv import load_dotenv
 from anthropic import Anthropic
 
+from src.bias_auditor import VARIANT_DISPLAY_LABELS, run_bias_audit
+from src.critique import critique_and_maybe_revise
 from src.extractor import DEFAULT_MODEL, extract_candidate
-from src.models import ProcessingError, ScoredCandidate
+from src.models import BiasAuditReport, ProcessingError, ScoredCandidate
 from src.pdf_parser import parse_pdf
 from src.scorer import score_candidate
-from src.critique import critique_and_maybe_revise
 
 load_dotenv()
 
 Result = ScoredCandidate | ProcessingError
 
 
-def process_one(client, pdf_path, filename, jd_text, model, self_critique):
-    """Run one resume through parse -> extract -> score (-> critique)."""
+def process_one(
+    client, pdf_path, filename, jd_text, model, self_critique, bias_audit
+) -> tuple[Result, BiasAuditReport | None]:
+    """Run one resume through parse -> extract -> score (-> critique) (-> bias audit)."""
 
     # 1. Parse the PDF
     try:
         resume_text = parse_pdf(pdf_path)
     except Exception as e:
-        return ProcessingError(source_file=filename, stage="parse", message=str(e))
+        return ProcessingError(source_file=filename, stage="parse", message=str(e)), None
 
     # 2. Extract candidate info
     try:
         profile = extract_candidate(client, resume_text, model=model)
     except Exception as e:
-        return ProcessingError(source_file=filename, stage="extract", message=str(e))
+        return ProcessingError(source_file=filename, stage="extract", message=str(e)), None
 
-    # 2. Score against the JD
+    # 3. Score against the JD
     try:
         scored = score_candidate(client, profile, jd_text, filename, model=model)
     except Exception as e:
-        return ProcessingError(source_file=filename, stage="score", message=str(e))
+        return ProcessingError(source_file=filename, stage="score", message=str(e)), None
 
-    # 3. Optional self-critique
+    # 4. Optional self-critique
     if self_critique:
         try:
             scored = critique_and_maybe_revise(client, scored, jd_text, model=model)
         except Exception:
             pass  # keep original scores if critique fails
 
-    return scored
+    # 5. Optional bias audit
+    audit: BiasAuditReport | None = None
+    if bias_audit:
+        try:
+            audit = run_bias_audit(client, profile, jd_text, model=model)
+        except Exception:
+            pass  # scoring result is still valid if audit fails
+
+    return scored, audit
 
 
 # ── Page config ──
@@ -57,6 +68,13 @@ with st.sidebar:
     st.header("Settings")
     model = st.text_input("Claude model", value=DEFAULT_MODEL)
     self_critique = st.checkbox("Enable self-critique (extra LLM call per resume)")
+    bias_audit = st.checkbox(
+        "Enable bias audit (5 extra LLM calls per resume)",
+        help=(
+            "Re-scores each candidate with demographic signals swapped "
+            "(name, graduation year) and reports score drift per dimension."
+        ),
+    )
 
 # ── File uploads ──
 col1, col2 = st.columns(2)
@@ -95,7 +113,7 @@ if st.button("Match Resumes", type="primary"):
 
     # Process each resume
     client = Anthropic()
-    results = []
+    pairs: list[tuple[Result, BiasAuditReport | None]] = []
     progress = st.progress(0, text="Processing resumes...")
 
     for i, resume_file in enumerate(resume_files):
@@ -109,18 +127,21 @@ if st.button("Match Resumes", type="primary"):
             tmp.write(resume_file.read())
             tmp_path = tmp.name
 
-        result = process_one(client, tmp_path, resume_file.name, jd_text, model, self_critique)
+        result, audit = process_one(
+            client, tmp_path, resume_file.name, jd_text, model, self_critique, bias_audit
+        )
         os.unlink(tmp_path)
-        results.append(result)
+        pairs.append((result, audit))
 
     progress.progress(1.0, text="Done!")
 
     # ── Split results into scored candidates and errors ──
-    scored = [r for r in results if isinstance(r, ScoredCandidate)]
-    errors = [r for r in results if isinstance(r, ProcessingError)]
+    scored_pairs = [(r, a) for r, a in pairs if isinstance(r, ScoredCandidate)]
+    errors = [r for r, _ in pairs if isinstance(r, ProcessingError)]
 
     # Sort by overall score, highest first
-    scored.sort(key=lambda c: c.overall_fit.score, reverse=True)
+    scored_pairs.sort(key=lambda x: x[0].overall_fit.score, reverse=True)
+    scored = [r for r, _ in scored_pairs]
 
     # ── Display ranked candidates ──
     if scored:
@@ -140,7 +161,7 @@ if st.button("Match Resumes", type="primary"):
         st.table(table_data)
 
         # Detailed view for each candidate
-        for c in scored:
+        for c, audit in scored_pairs:
             with st.expander(f"{c.profile.name} — {c.overall_fit.score}/100"):
                 st.write(f"**Source:** {c.source_file}")
                 st.write(f"**Years of experience:** {c.profile.years_experience}")
@@ -159,6 +180,58 @@ if st.button("Match Resumes", type="primary"):
                     st.write("**Gaps:**")
                     for gap in c.gaps:
                         st.write(f"- _{gap.category}_: {gap.detail}")
+
+                if audit:
+                    st.write("---")
+                    st.write("**Bias Audit**")
+                    st.caption(
+                        f"Each row re-scores the same candidate with one demographic "
+                        f"signal swapped. Threshold: {audit.drift_threshold} pts."
+                    )
+
+                    if audit.flagged:
+                        st.warning(
+                            f"Score drift detected — largest shift: "
+                            f"{audit.max_score_drift:.0f} pts. "
+                            + (audit.flag_reason or "")
+                        )
+                    else:
+                        st.success(
+                            f"Stable — max drift {audit.max_score_drift:.0f} pts "
+                            f"(within {audit.drift_threshold} pt threshold)"
+                        )
+
+                    _DIMS = [
+                        ("skills_match",     "Skills"),
+                        ("experience_match", "Experience"),
+                        ("role_relevance",   "Role"),
+                        ("overall_fit",      "Overall"),
+                    ]
+                    base = {k: getattr(audit.baseline, k).score for k, _ in _DIMS}
+                    rows = [
+                        {
+                            "Signal swapped": "Baseline (original resume)",
+                            **{label: base[k] for k, label in _DIMS},
+                            "Max Δ": 0,
+                        }
+                    ]
+                    for v in audit.variants:
+                        var_scores = {k: getattr(v.scores, k).score for k, _ in _DIMS}
+                        max_delta = max(abs(var_scores[k] - base[k]) for k, _ in _DIMS)
+                        rows.append({
+                            "Signal swapped": VARIANT_DISPLAY_LABELS.get(v.label, v.label),
+                            **{label: var_scores[k] for k, label in _DIMS},
+                            "Max Δ": max_delta,
+                        })
+                    st.dataframe(
+                        rows,
+                        hide_index=True,
+                        column_config={
+                            "Max Δ": st.column_config.NumberColumn(
+                                help="Largest score change vs baseline across all dimensions"
+                            ),
+                        },
+                    )
 
     # ── Display errors ──
     if errors:

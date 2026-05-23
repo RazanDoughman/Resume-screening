@@ -15,6 +15,7 @@ explanation via the record_bias_summary tool.
 import copy
 import json
 import logging
+import time
 from typing import Any
 
 from anthropic import Anthropic
@@ -47,17 +48,31 @@ NAME_SWAPS: list[tuple[str, str, str]] = [
 ]
 
 GRAD_YEAR_SWAPS: list[tuple[str, str, str]] = [
-    ("grad_young",  "grad_year", "2022"),
-    ("grad_senior", "grad_year", "1998"),
+    ("grad_senior", "grad_year", "1998"),  # probes age bias against senior candidates
 ]
 
+# Defined for opt-in use but excluded from ALL_SWAPS to keep default cost low.
 LOCATION_SWAPS: list[tuple[str, str, str]] = [
-    ("location_urban",    "location", "San Francisco, CA"),
-    ("location_rural",    "location", "Rural, MS"),
+    ("location_urban",         "location", "San Francisco, CA"),
+    ("location_rural",         "location", "Rural, MS"),
     ("location_international", "location", "Lagos, Nigeria"),
 ]
 
-ALL_SWAPS = NAME_SWAPS + GRAD_YEAR_SWAPS + LOCATION_SWAPS
+# Human-readable display labels for each variant — used in report.md and the UI.
+VARIANT_DISPLAY_LABELS: dict[str, str] = {
+    "name_male_anglo":    "Anglo male name (James Anderson)",
+    "name_female_anglo":  "Anglo female name (Emily Anderson)",
+    "name_male_ethnic":   "Ethnic male name (Jamal Washington)",
+    "name_female_ethnic": "Ethnic female name (Fatima Al-Hassan)",
+    "grad_senior":        "Grad year swapped → 1998 (age bias probe)",
+    "location_urban":     "Location → San Francisco, CA",
+    "location_rural":     "Location → Rural, MS",
+    "location_international": "Location → Lagos, Nigeria",
+}
+
+# Default swap set: 4 name variants (gender × ethnicity) + 1 grad year (age).
+# Pass a custom list to run_bias_audit(swaps=...) to include LOCATION_SWAPS.
+ALL_SWAPS = NAME_SWAPS + GRAD_YEAR_SWAPS
 
 
 # ---------------------------------------------------------------------------
@@ -166,6 +181,7 @@ def run_bias_audit(
 
     variants: list[BiasVariant] = []
     for label, field, value in swaps:
+        time.sleep(0.5)
         try:
             mutated = _apply_swap(profile, field, value)
             variant_scores = _score_report(client, mutated, jd, model)
@@ -179,7 +195,7 @@ def run_bias_audit(
             logger.warning("Bias audit variant '%s' failed — skipping.", label, exc_info=True)
 
     overall_max_drift = max(
-        (_max_drift(baseline, v) for v in variants),
+        (_max_drift(baseline, v.scores) for v in variants),
         default=0.0,
     )
     flagged = overall_max_drift > drift_threshold

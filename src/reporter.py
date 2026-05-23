@@ -14,6 +14,7 @@ Two outputs:
 import json
 from pathlib import Path
 
+from src.bias_auditor import VARIANT_DISPLAY_LABELS
 from src.models import BiasAuditReport, ProcessingError, ScoredCandidate
 
 Result = ScoredCandidate | ProcessingError
@@ -40,20 +41,27 @@ def write_json(results: list[Result], path: str | Path) -> None:
 def _bias_drift_table(audit: BiasAuditReport) -> list[str]:
     """Render the bias audit as a markdown drift table for one candidate."""
     dims = ("skills_match", "experience_match", "role_relevance", "overall_fit")
-    headers = ("skills", "experience", "role", "overall", "max Δ")
+    headers = ("Skills", "Experience", "Role", "Overall", "Max Δ")
 
     lines: list[str] = []
-    flag_label = "FLAGGED" if audit.flagged else "OK"
-    lines.append(f"**Bias audit** — max drift {audit.max_score_drift:.0f} pts · {flag_label}")
+    flag_label = "⚠ FLAGGED" if audit.flagged else "✓ No significant drift"
+    lines.append(
+        f"**Bias Audit** — largest score drift across demographic signal swaps: "
+        f"**{audit.max_score_drift:.0f} pts** · {flag_label}"
+    )
     lines.append("")
-    lines.append(f"| Variant | {' | '.join(headers)} |")
+    lines.append(f"_Threshold: {audit.drift_threshold} pts. "
+                 f"Bold cells exceeded the threshold._")
+    lines.append("")
+    lines.append(f"| Signal swapped | {' | '.join(headers)} |")
     lines.append(f"| --- | {' | '.join(['---'] * len(headers))} |")
 
     base_scores = {d: getattr(audit.baseline, d).score for d in dims}
     base_cells = " | ".join(str(base_scores[d]) for d in dims)
-    lines.append(f"| baseline | {base_cells} | — |")
+    lines.append(f"| Baseline (original resume) | {base_cells} | 0 |")
 
     for v in audit.variants:
+        display_label = VARIANT_DISPLAY_LABELS.get(v.label, v.label)
         cells: list[str] = []
         max_delta = 0
         for d in dims:
@@ -65,11 +73,11 @@ def _bias_drift_table(audit: BiasAuditReport) -> list[str]:
             if abs(delta) > audit.drift_threshold:
                 cell = f"**{var}**"
             cells.append(cell)
-        lines.append(f"| {v.label} | {' | '.join(cells)} | {max_delta} |")
+        lines.append(f"| {display_label} | {' | '.join(cells)} | {max_delta} |")
 
     if audit.flag_reason:
         lines.append("")
-        lines.append(f"> {audit.flag_reason}")
+        lines.append(f"> **Finding:** {audit.flag_reason}")
 
     return lines
 

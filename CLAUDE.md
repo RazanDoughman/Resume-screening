@@ -55,7 +55,7 @@ Requires `ANTHROPIC_API_KEY` in a `.env` file (loaded via `python-dotenv`). See 
 - `main.py` — CLI that loops over resume PDFs sequentially
 - `app.py` — Streamlit web UI with file upload
 
-Both entry points define their own `process_one()` that wires the same parse → extract → score (→ critique) (→ bias audit) pipeline. They are **not** sharing a helper — if you change the pipeline shape, update both files. Note: `process_one()` in `main.py` returns `tuple[Result, BiasAuditReport | None]`; `app.py` has not yet been updated to support bias audit.
+Both entry points define their own `process_one()` that wires the same parse → extract → score (→ critique) (→ bias audit) pipeline. They are **not** sharing a helper — if you change the pipeline shape, update both files. Both `main.py` and `app.py` return `tuple[Result, BiasAuditReport | None]` from `process_one()` and fully support bias audit.
 
 **Pipeline stages (each in its own module under `src/`):**
 1. `pdf_parser.py` — pdfplumber text extraction, no LLM
@@ -78,5 +78,5 @@ Both entry points define their own `process_one()` that wires the same parse →
 - Errors in individual resumes produce a `ProcessingError` (`stage` is one of `parse`/`extract`/`score`) instead of crashing the batch. A failure inside the optional critique or bias audit pass does **not** produce a `ProcessingError`; it logs and skips, keeping whatever valid work was already done.
 - `scorer.py` also exposes `score_candidate_ensemble()` which runs N scoring calls and returns median scores per dimension. Reasoning text is taken from the first run only — don't try to merge text across runs.
 - Evals test score ranges (e.g., 80-100 for strong match) because LLM output varies between calls. Add new scoring eval cases by appending to `ALL_CASES` in `tests/evals/cases.py`. Add new bias stability cases by appending to `ALL_BIAS_CASES` using the `BiasAuditEvalCase` dataclass.
-- Bias audit eval cases use only `NAME_SWAPS` (4 variants) to keep cost manageable. The full `ALL_SWAPS` (name + grad year + location) is used in production runs.
+- Bias audit eval cases use only `NAME_SWAPS` (4 variants) to keep cost manageable. Production runs use `ALL_SWAPS` (name + grad year = 5 variants). `LOCATION_SWAPS` is defined in `bias_auditor.py` but excluded from `ALL_SWAPS` by default — pass it explicitly via `run_bias_audit(swaps=...)` to opt in.
 - Per `CONTRIBUTING.MD`, prompts are treated as the teaching artifact: any prompt change should be visible in the PR description (or saved under `prompts/`), and new conventions should be reflected back into this file.

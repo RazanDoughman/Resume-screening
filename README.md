@@ -83,7 +83,7 @@ it records the error and moves on to the next resume.
 **Stage E — Bias audit (optional)** (`src/bias_auditor.py`) — LLM call × N swap variants
 
 - Only runs if you pass `--bias-audit`
-- Takes the extracted `CandidateProfile` and creates copies with one demographic signal swapped at a time: candidate name (4 variants covering gender × ethnicity), graduation year (young vs senior), location (urban US, rural US, international)
+- Takes the extracted `CandidateProfile` and creates copies with one demographic signal swapped at a time: candidate name (4 variants covering gender × ethnicity) and graduation year (1 variant probing age bias). Location swaps (`LOCATION_SWAPS`) are defined but excluded from the default set — opt in by passing them explicitly to `run_bias_audit(swaps=...)`
 - Re-scores each mutated copy against the JD using the same scoring LLM
 - Computes the absolute score delta per dimension for each variant vs the baseline
 - If any delta exceeds the threshold (default 10 pts), the candidate is flagged
@@ -175,8 +175,9 @@ Flags:
 - `--self-critique` — add one more LLM call per resume that reviews and
   may revise the scores. +1 call per resume.
 - `--bias-audit` — re-score each candidate with demographic signals swapped
-  (name, graduation year, location) and report score drift. Adds one LLM
-  call per swap variant per resume (11 variants by default).
+  (name, graduation year) and report score drift. Adds one LLM call per
+  swap variant per resume (5 variants by default: 4 name, 1 grad year).
+  Pass `swaps=LOCATION_SWAPS` to `run_bias_audit()` to include location.
 
 Outputs:
 
