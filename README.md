@@ -80,6 +80,15 @@ it records the error and moves on to the next resume.
 - If `did_revise: false` -> keeps original scores
 - If `did_revise: true` -> returns corrected scores
 
+**Stage E — Bias audit (optional)** (`src/bias_auditor.py`) — LLM call × N swap variants
+
+- Only runs if you pass `--bias-audit`
+- Takes the extracted `CandidateProfile` and creates copies with one demographic signal swapped at a time: candidate name (4 variants covering gender × ethnicity) and graduation year (1 variant probing age bias). Location swaps (`LOCATION_SWAPS`) are defined but excluded from the default set — opt in by passing them explicitly to `run_bias_audit(swaps=...)`
+- Re-scores each mutated copy against the JD using the same scoring LLM
+- Computes the absolute score delta per dimension for each variant vs the baseline
+- If any delta exceeds the threshold (default 10 pts), the candidate is flagged
+- Output: a drift table per candidate in `report.md` and a full `bias_audit.json`
+
 ### Step 5: Write output (`src/reporter.py`)
 
 After all resumes are processed, `run()`:
@@ -100,8 +109,10 @@ Structured profile
 Scores + reasoning
    |  Claude + tool use (LLM #3, optional)
 Reviewed scores
+   |  Claude × N swaps (LLM #4…N, optional)
+Bias audit report
    |
-results.json + report.md
+results.json + report.md + bias_audit.json
 ```
 
 The key pattern that repeats in every LLM call: **define a tool from a Pydantic
@@ -117,8 +128,12 @@ object**. This guarantees structured, typed output every time.
 - **Prompt caching** — the JD is identical across every resume in a run, so
   Claude serves it from cache at ~10% of the normal cost.
 - An optional **self-critique** pass behind a flag that reviews scores.
+- An optional **bias audit** that probes for demographic sensitivity by
+  re-scoring the same candidate with swapped name, graduation year, and
+  location signals, then measuring score drift across dimensions.
 - An **eval harness** for testing LLM pipelines, because you can't assert
-  exact-score equality on a probabilistic output.
+  exact-score equality on a probabilistic output. Includes both scoring
+  range evals and bias stability evals.
 
 No asyncio, no frameworks, no agent libraries. Everything is plain
 synchronous Python you can read top-to-bottom in one sitting.
@@ -147,6 +162,8 @@ and re-run to experiment.
 
 ## Run
 
+Basic run — score all resumes against the job description:
+
 ```bash
 python main.py \
     --jd sample_data/sample_jd.txt \
@@ -154,16 +171,45 @@ python main.py \
     --output output/
 ```
 
+With bias audit — re-scores each candidate with demographic signals swapped
+and reports score drift per dimension:
+
+```bash
+python main.py \
+    --jd sample_data/sample_jd.txt \
+    --resumes sample_data/resumes/ \
+    --bias-audit
+```
+
+With both self-critique and bias audit:
+
+```bash
+python main.py \
+    --jd sample_data/sample_jd.txt \
+    --resumes sample_data/resumes/ \
+    --self-critique \
+    --bias-audit
+```
+
 Flags:
 
 - `--model MODEL_ID` — override the Claude model (default: `claude-sonnet-4-6`)
+- `--output DIR` — override the output directory (default: `./output`)
 - `--self-critique` — add one more LLM call per resume that reviews and
   may revise the scores. +1 call per resume.
+- `--bias-audit` — re-score each candidate with demographic signals swapped
+  (name, graduation year) and report score drift. Adds 5 extra LLM calls per
+  resume (4 name variants covering gender × ethnicity + 1 grad year variant
+  probing age bias). Pass `swaps=LOCATION_SWAPS` to `run_bias_audit()` to
+  also include location variants.
 
 Outputs:
 
 - `output/results.json` — machine-readable ranked list plus any errors
-- `output/report.md` — human-readable markdown report
+- `output/report.md` — human-readable markdown report; includes a per-candidate
+  drift table when `--bias-audit` is used
+- `output/bias_audit.json` — full audit data per candidate (only written when
+  `--bias-audit` is used)
 
 ## Test
 
@@ -187,10 +233,19 @@ uv run python -m src.evals
 
 Runs the golden cases in [tests/evals/cases.py](tests/evals/cases.py)
 through the real `extract -> score` pipeline and checks each dimension
-against an expected range. Exits nonzero on failure.
+against an expected range. Also runs bias stability cases that assert a
+clearly qualified candidate's scores don't shift when demographic signals
+are swapped. Exits nonzero on any failure.
 
-Add a case by appending to `ALL_CASES` at the bottom of that file. When
-you iterate on a prompt, run the evals to see whether the change moved
+```bash
+uv run python -m src.evals --bias
+```
+
+Run only the bias stability cases (faster when iterating on audit prompts).
+
+Add a scoring case by appending to `ALL_CASES`. Add a bias stability case
+by appending to `ALL_BIAS_CASES` using the `BiasAuditEvalCase` dataclass.
+When you iterate on a prompt, run the evals to see whether the change moved
 scores in the right direction.
 
 ## Project layout
@@ -204,15 +259,16 @@ resume_matcher/
 │   ├── extractor.py     # text -> CandidateProfile (LLM call)
 │   ├── scorer.py        # (profile, JD) -> ScoredCandidate (LLM call)
 │   ├── critique.py      # optional 2nd-pass review (LLM call)
-│   ├── reporter.py      # results -> JSON + markdown
+│   ├── bias_auditor.py  # optional bias audit — re-scores with swapped demographic signals
+│   ├── reporter.py      # results -> JSON + markdown (+ bias drift table)
 │   ├── prompts.py       # every LLM prompt in one place
 │   ├── models.py        # Pydantic contracts
-│   └── evals.py         # eval harness runner
+│   └── evals.py         # eval harness runner (scoring + bias stability)
 ├── tests/
 │   ├── test_pdf_parser.py
 │   ├── test_reporter.py
 │   └── evals/
-│       └── cases.py     # golden eval cases
+│       └── cases.py     # golden eval cases (ALL_CASES + ALL_BIAS_CASES)
 ├── sample_data/
 │   ├── sample_jd.txt
 │   └── resumes/         # generated by scripts/generate_sample_resumes.py
@@ -236,3 +292,9 @@ resume_matcher/
 - **Opt-in quality flag.** `--self-critique` is off by default so a basic
   run costs two LLM calls per resume. Turn it on when you want to add a
   reflection pass.
+- **Bias audit is additive, not destructive.** `--bias-audit` appends a
+  drift table to each candidate's section in `report.md` and writes a
+  separate `bias_audit.json`. It never changes scores — it only reports
+  whether the model would have scored differently with different demographic
+  signals. The audit fails safely: a broken variant is logged and skipped,
+  the scored candidate is always returned regardless.
