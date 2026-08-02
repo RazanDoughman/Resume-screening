@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A teaching project that scores resume PDFs against a job description using the Claude API. Each resume goes through a pipeline: PDF parse -> structured extraction (LLM) -> scoring (LLM) -> optional self-critique (LLM) -> optional bias audit (LLM × N swaps). Output is a ranked JSON file, markdown report, and optional bias audit JSON.
+A teaching project that scores resume PDFs against a job description using the Claude API. Each resume goes through a pipeline: PDF parse -> structured extraction (LLM) -> scoring (LLM) -> optional self-critique (LLM) -> optional bias audit (LLM × N swaps). Output is a ranked JSON file, markdown report, optional CSV export, and optional bias audit JSON.
 
 ## Commands
 
@@ -26,6 +26,9 @@ python main.py --jd sample_data/sample_jd.txt --resumes sample_data/resumes/ --s
 
 # Run with bias audit (re-scores each candidate with demographic signals swapped)
 python main.py --jd sample_data/sample_jd.txt --resumes sample_data/resumes/ --bias-audit
+
+# Run with CSV export (adds a flat results.csv — deterministic, no extra LLM calls)
+python main.py --jd sample_data/sample_jd.txt --resumes sample_data/resumes/ --csv
 
 # Run the Streamlit web UI
 uv run streamlit run app.py
@@ -63,7 +66,7 @@ Both entry points define their own `process_one()` that wires the same parse →
 3. `scorer.py` — profile + JD -> `ScoredCandidate` (LLM call #2, tool: `record_score`). Uses prompt caching on the JD text block (`cache_control: ephemeral`)
 4. `critique.py` — optional review pass (LLM call #3, tool: `record_critique`)
 5. `bias_auditor.py` — optional bias audit (LLM call × N swap variants). Re-scores the candidate with demographic signals swapped (name, graduation year, location) and computes score drift per dimension.
-6. `reporter.py` — writes `results.json`, `report.md`, and (if audit ran) `bias_audit.json`. No LLM.
+6. `reporter.py` — writes `results.json`, `report.md`, (if `--csv`) `results.csv`, and (if audit ran) `bias_audit.json`. No LLM.
 
 **Key files:**
 - `src/models.py` — all Pydantic models (`CandidateProfile`, `ScoreReport`, `ScoredCandidate`, `CritiqueReport`, `ProcessingError`, `BiasVariant`, `BiasAuditReport`). These are the contracts between modules.
@@ -76,6 +79,7 @@ Both entry points define their own `process_one()` that wires the same parse →
 
 - Default model is `claude-sonnet-4-6`, set in `src/extractor.py` as `DEFAULT_MODEL`. `scorer.py`, `critique.py`, and `bias_auditor.py` redefine the same constant locally — keep them in sync.
 - Errors in individual resumes produce a `ProcessingError` (`stage` is one of `parse`/`extract`/`score`) instead of crashing the batch. A failure inside the optional critique or bias audit pass does **not** produce a `ProcessingError`; it logs and skips, keeping whatever valid work was already done.
+- CSV export is opt-in via `--csv` and fully deterministic — no extra LLM calls. `write_csv()` flattens each `ScoredCandidate` into one row: nested `DimensionScore` objects become `{dimension}_score` + `{dimension}_reasoning` columns, and list fields (skills, education, gaps) join into one cell with `_LIST_SEP`. `ProcessingError` entries are omitted by design — a CSV holds one schema per file, so errors stay in `results.json`. Column order is derived from `_DIMENSIONS`, so adding a scoring dimension updates the header automatically.
 - `scorer.py` also exposes `score_candidate_ensemble()` which runs N scoring calls and returns median scores per dimension. Reasoning text is taken from the first run only — don't try to merge text across runs.
 - Evals test score ranges (e.g., 80-100 for strong match) because LLM output varies between calls. Add new scoring eval cases by appending to `ALL_CASES` in `tests/evals/cases.py`. Add new bias stability cases by appending to `ALL_BIAS_CASES` using the `BiasAuditEvalCase` dataclass.
 - Bias audit eval cases use only `NAME_SWAPS` (4 variants) to keep cost manageable. Production runs use `ALL_SWAPS` (name + grad year = 5 variants). `LOCATION_SWAPS` is defined in `bias_auditor.py` but excluded from `ALL_SWAPS` by default — pass it explicitly via `run_bias_audit(swaps=...)` to opt in.

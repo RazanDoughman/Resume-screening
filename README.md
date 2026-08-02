@@ -96,6 +96,8 @@ After all resumes are processed, `run()`:
 1. Creates the output directory
 2. Writes `results.json` — all candidates ranked by overall_fit score, plus any errors
 3. Writes `report.md` — a readable markdown table with rankings, per-candidate score breakdowns, and gaps
+4. Writes `results.csv` — only when `--csv` is passed. One flat row per
+   successfully scored candidate, for spreadsheets. No LLM calls.
 
 ### The big picture
 
@@ -112,7 +114,7 @@ Reviewed scores
    |  Claude × N swaps (LLM #4…N, optional)
 Bias audit report
    |
-results.json + report.md + bias_audit.json
+results.json + report.md + results.csv + bias_audit.json
 ```
 
 The key pattern that repeats in every LLM call: **define a tool from a Pydantic
@@ -191,6 +193,16 @@ python main.py \
     --bias-audit
 ```
 
+With CSV export — same scoring run, plus a flat file you can open in a
+spreadsheet:
+
+```bash
+python main.py \
+    --jd sample_data/sample_jd.txt \
+    --resumes sample_data/resumes/ \
+    --csv
+```
+
 Flags:
 
 - `--model MODEL_ID` — override the Claude model (default: `claude-sonnet-4-6`)
@@ -202,12 +214,18 @@ Flags:
   resume (4 name variants covering gender × ethnicity + 1 grad year variant
   probing age bias). Pass `swaps=LOCATION_SWAPS` to `run_bias_audit()` to
   also include location variants.
+- `--csv` — also write `results.csv`, one flat row per successfully scored
+  candidate. Pure logic, no extra LLM calls, so it costs nothing to turn on.
 
 Outputs:
 
 - `output/results.json` — machine-readable ranked list plus any errors
 - `output/report.md` — human-readable markdown report; includes a per-candidate
   drift table when `--bias-audit` is used
+- `output/results.csv` — flat one-row-per-candidate export for spreadsheets
+  (only written when `--csv` is used). Scores and reasoning get one column per
+  dimension; skills, education, and gaps are joined into single cells. Failed
+  resumes are omitted — they stay in `results.json`
 - `output/bias_audit.json` — full audit data per candidate (only written when
   `--bias-audit` is used)
 
@@ -260,7 +278,7 @@ resume_matcher/
 │   ├── scorer.py        # (profile, JD) -> ScoredCandidate (LLM call)
 │   ├── critique.py      # optional 2nd-pass review (LLM call)
 │   ├── bias_auditor.py  # optional bias audit — re-scores with swapped demographic signals
-│   ├── reporter.py      # results -> JSON + markdown (+ bias drift table)
+│   ├── reporter.py      # results -> JSON + markdown + optional CSV (+ bias drift table)
 │   ├── prompts.py       # every LLM prompt in one place
 │   ├── models.py        # Pydantic contracts
 │   └── evals.py         # eval harness runner (scoring + bias stability)

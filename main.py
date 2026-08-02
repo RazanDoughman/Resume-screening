@@ -25,7 +25,7 @@ from src.critique import critique_and_maybe_revise
 from src.extractor import DEFAULT_MODEL, extract_candidate
 from src.models import BiasAuditReport, ProcessingError, ScoredCandidate
 from src.pdf_parser import parse_pdf
-from src.reporter import write_json, write_markdown
+from src.reporter import write_csv, write_json, write_markdown
 from src.scorer import score_candidate
 
 Result = ScoredCandidate | ProcessingError
@@ -97,6 +97,7 @@ def run(
     model: str,
     self_critique: bool,
     bias_audit: bool,
+    csv: bool,
 ) -> int:
     import json
 
@@ -152,6 +153,8 @@ def run(
     os.makedirs(output_dir, exist_ok=True)
     write_json(results, os.path.join(output_dir, "results.json"))
     write_markdown(results, os.path.join(output_dir, "report.md"), jd_path, audits=audits or None)
+    if csv:
+        write_csv(results, os.path.join(output_dir, "results.csv"))
 
     if audits:
         audit_path = os.path.join(output_dir, "bias_audit.json")
@@ -188,7 +191,7 @@ def main() -> int:
         "--output",
         type=str,
         default="output",
-        help="Directory to write results.json and report.md (default: ./output).",
+        help="Directory to write the report files (default: ./output).",
     )
     parser.add_argument(
         "--model",
@@ -208,6 +211,14 @@ def main() -> int:
             "Re-score each candidate with demographic signals swapped "
             "(name, graduation year, location) and report score drift. "
             "Adds one LLM call per swap variant per resume."
+        ),
+    )
+    parser.add_argument(
+        "--csv",
+        action="store_true",
+        help=(
+            "Also write results.csv — one flat row per scored candidate, "
+            "for spreadsheets. No extra LLM calls."
         ),
     )
     args = parser.parse_args()
@@ -231,6 +242,7 @@ def main() -> int:
         args.model,
         args.self_critique,
         args.bias_audit,
+        args.csv,
     )
 
 

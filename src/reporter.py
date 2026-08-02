@@ -1,16 +1,19 @@
 """
 Final stage of the pipeline: take the in-memory results and write them to
-disk as machine-readable JSON and a human-readable markdown report.
+disk as machine-readable JSON and CSV, plus a human-readable markdown report.
 
 No LLM calls here — this is a pure transform from Pydantic models to text.
 That's why test_reporter.py can run in milliseconds with no API key.
 
-Two outputs:
+Three outputs:
   - results.json: {"candidates": [...sorted by overall_fit desc...],
                    "errors":     [...resumes that failed at any stage...]}
+  - results.csv:  one flat row per scored candidate, ranked the same way.
+                  Written only when the caller asks for it (--csv).
   - report.md:    a ranked table plus per-candidate breakdowns and gaps.
 """
 
+import csv
 import json
 from pathlib import Path
 
@@ -36,6 +39,66 @@ def write_json(results: list[Result], path: str | Path) -> None:
         "errors": [e.model_dump() for e in errors],
     }
     Path(path).write_text(json.dumps(payload, indent=2))
+
+
+# Separator for list-valued cells (skills, education, gaps). Semicolon rather
+# than comma so the cell stays readable when a spreadsheet shows it unquoted.
+_LIST_SEP = "; "
+
+# Dimension columns, in the order a recruiter reads them: the headline score
+# first, then the three components that explain it.
+_DIMENSIONS = ("overall_fit", "skills_match", "experience_match", "role_relevance")
+
+_COLUMNS = (
+    ["rank", "name", "source_file", "years_experience"]
+    + [f"{d}_{suffix}" for d in _DIMENSIONS for suffix in ("score", "reasoning")]
+    + ["summary_reasoning", "skills", "education", "gaps"]
+)
+
+
+def _format_gaps(candidate: ScoredCandidate) -> str:
+    """Render gaps as 'Skill: detail; Experience: detail' for a single cell."""
+
+    return _LIST_SEP.join(f"{g.category.capitalize()}: {g.detail}" for g in candidate.gaps)
+
+
+def _csv_row(rank: int, c: ScoredCandidate) -> dict[str, object]:
+    """Flatten one ScoredCandidate into a single flat dict of CSV cells."""
+
+    row: dict[str, object] = {
+        "rank": rank,
+        "name": c.profile.name,
+        "source_file": c.source_file,
+        "years_experience": c.profile.years_experience,
+    }
+    for dim in _DIMENSIONS:
+        score = getattr(c, dim)
+        row[f"{dim}_score"] = score.score
+        row[f"{dim}_reasoning"] = score.reasoning
+    row["summary_reasoning"] = c.reasoning
+    row["skills"] = _LIST_SEP.join(c.profile.skills)
+    row["education"] = _LIST_SEP.join(c.profile.education)
+    row["gaps"] = _format_gaps(c)
+    return row
+
+
+def write_csv(results: list[Result], path: str | Path) -> None:
+    """Write one flat row per scored candidate, ranked by overall_fit desc.
+
+    Errors are omitted — a CSV has one schema per file, and ProcessingError
+    shares no columns with a scored candidate. They stay in results.json.
+    """
+
+    candidates, _ = _split(results)
+
+    # newline="" is required by the csv module: it writes its own \r\n line
+    # endings, and without this Python would translate them again on Windows,
+    # producing a blank line between every row.
+    with Path(path).open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=_COLUMNS)
+        writer.writeheader()
+        for rank, c in enumerate(candidates, start=1):
+            writer.writerow(_csv_row(rank, c))
 
 
 def _bias_drift_table(audit: BiasAuditReport) -> list[str]:
@@ -154,4 +217,7 @@ def write_markdown(
             lines.append(f"| {e.source_file} | {e.stage} | {msg} |")
         lines.append("")
 
-    Path(path).write_text("\n".join(lines))
+    Path(path).write_text(
+    "\n".join(lines),
+    encoding="utf-8",
+    )
