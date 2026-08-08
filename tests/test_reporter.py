@@ -12,7 +12,13 @@ from src.models import (
     Role,
     ScoredCandidate,
 )
-from src.reporter import write_csv, write_json, write_markdown
+from src.reporter import (
+    _BIN_COUNT,
+    _score_bins,
+    write_csv,
+    write_json,
+    write_markdown,
+)
 
 
 def _make_scored(name: str, overall: int, source: str) -> ScoredCandidate:
@@ -32,9 +38,12 @@ def _make_scored(name: str, overall: int, source: str) -> ScoredCandidate:
             education=["BS Computer Science"],
             raw_summary="I build backend systems.",
         ),
-        skills_match=DimensionScore(score=overall - 5, reasoning="Skills reason"),
+        # The derived dimensions are clamped because DimensionScore is bounded
+        # 0-100: the histogram tests pass overall=0 and overall=100, which would
+        # otherwise derive -5 and 102 and fail validation.
+        skills_match=DimensionScore(score=max(0, overall - 5), reasoning="Skills reason"),
         experience_match=DimensionScore(score=overall, reasoning="Experience reason"),
-        role_relevance=DimensionScore(score=overall + 2, reasoning="Role reason"),
+        role_relevance=DimensionScore(score=min(100, overall + 2), reasoning="Role reason"),
         overall_fit=DimensionScore(score=overall, reasoning="Overall reason"),
         reasoning="Two-sentence reasoning. Looks strong.",
         gaps=[Gap(category="skill", detail="No Kafka experience")],
@@ -242,3 +251,164 @@ def test_csv_has_no_blank_lines_between_rows(tmp_path: Path) -> None:
     # The csv module writes its own \r\n. If write_csv ever drops newline="",
     # Windows translates that again into \r\r\n — a blank line per row.
     assert b"\r\r\n" not in out.read_bytes()
+
+
+def _bins(*scores: int) -> list[int]:
+    """Bin a list of overall_fit scores, one throwaway candidate per score."""
+
+    return _score_bins([_make_scored(f"C{i}", s, f"c{i}.pdf") for i, s in enumerate(scores)])
+
+
+def test_score_bins_counts_a_known_set_of_scores() -> None:
+    assert _bins(92, 88, 76, 71, 45) == [0, 0, 0, 0, 1, 0, 0, 2, 1, 1]
+
+
+def test_score_bins_returns_all_zeros_for_empty_input() -> None:
+    counts = _score_bins([])
+
+    assert len(counts) == _BIN_COUNT
+    assert counts == [0] * _BIN_COUNT
+
+
+def test_score_bins_handles_a_single_candidate() -> None:
+    counts = _bins(55)
+
+    assert counts[5] == 1
+    assert sum(counts) == 1
+
+
+def test_score_bins_counts_zero_in_the_bottom_bin() -> None:
+    # `if score:` is False for a legitimate 0 — that candidate must still count.
+    counts = _bins(0)
+
+    assert counts[0] == 1
+    assert sum(counts) == 1
+
+
+def test_score_bins_counts_one_hundred_in_the_top_bin() -> None:
+    # 100 // 10 == 10, one past the last index, unless the bin is clamped.
+    counts = _bins(100)
+
+    assert counts[_BIN_COUNT - 1] == 1
+    assert sum(counts) == 1
+
+
+def test_score_bins_puts_89_and_90_in_different_bins() -> None:
+    counts = _bins(89, 90)
+
+    assert counts[8] == 1
+    assert counts[9] == 1
+
+
+def test_score_bins_puts_all_identical_scores_in_one_bin() -> None:
+    # Score compression is a real signal about the scoring prompt, not a bug.
+    counts = _bins(75, 75, 75, 75, 75)
+
+    assert counts[7] == 5
+    assert sum(counts) == 5
+
+
+def _chart_line(content: str, label: str) -> str:
+    """Return the histogram line for one bin, e.g. '90-100'."""
+
+    for line in content.splitlines():
+        if line.strip().startswith(f"{label} |"):
+            return line
+    raise AssertionError(f"no histogram line for bin {label!r}")
+
+
+def _report(tmp_path: Path, results: list) -> str:
+    out = tmp_path / "report.md"
+    write_markdown(results, out, Path("jd.txt"))
+    return out.read_text(encoding="utf-8")
+
+
+def test_markdown_includes_score_distribution_section(tmp_path: Path) -> None:
+    content = _report(tmp_path, [_make_scored("Alice", 90, "alice.pdf")])
+
+    assert "## Score distribution" in content
+    assert content.index("## Score distribution") < content.index("## Ranked candidates")
+
+
+def test_markdown_histogram_is_inside_a_code_fence(tmp_path: Path) -> None:
+    # Without the fence, markdown collapses the padding and the bars misalign.
+    content = _report(tmp_path, [_make_scored("Alice", 90, "alice.pdf")])
+
+    chart = content.split("## Score distribution", 1)[1].split("## Ranked candidates", 1)[0]
+    assert chart.count("```") == 2
+    assert _chart_line(content, "90-100") in chart.split("```")[1]
+
+
+def test_markdown_top_bin_is_labelled_inclusive_of_one_hundred(tmp_path: Path) -> None:
+    # The top bin holds 90..100. "Simplifying" the label to 90-99 would lie.
+    content = _report(tmp_path, [_make_scored("Alice", 100, "alice.pdf")])
+
+    assert "90-100" in content
+    assert "90-99" not in content
+
+
+def test_markdown_histogram_prints_counts_for_empty_bins(tmp_path: Path) -> None:
+    content = _report(tmp_path, [_make_scored("Alice", 55, "alice.pdf")])
+
+    assert _chart_line(content, "0-9").endswith(" 0")
+    assert _chart_line(content, "50-59").endswith(" 1")
+
+
+def test_markdown_histogram_renders_a_bar_for_every_nonzero_bin(tmp_path: Path) -> None:
+    results = [
+        _make_scored("Alice", 92, "alice.pdf"),
+        _make_scored("Bob", 76, "bob.pdf"),
+        _make_scored("Carol", 71, "carol.pdf"),
+    ]
+
+    content = _report(tmp_path, results)
+
+    assert "#" in _chart_line(content, "90-100")
+    assert "##" in _chart_line(content, "70-79")
+    assert "#" not in _chart_line(content, "60-69")
+
+
+def test_markdown_shows_placeholder_when_no_candidates_scored(tmp_path: Path) -> None:
+    # Every resume failed: no max(), no division, no crash.
+    results = [
+        ProcessingError(source_file="a.pdf", stage="parse", message="corrupt"),
+        ProcessingError(source_file="b.pdf", stage="score", message="timeout"),
+    ]
+
+    content = _report(tmp_path, results)
+
+    assert "## Score distribution" in content
+    assert "_No scored candidates to chart._" in content
+    assert "```" not in content
+
+
+def test_markdown_histogram_excludes_failed_resumes_from_counts(tmp_path: Path) -> None:
+    # write_markdown must chart the split-out candidates, not the raw results.
+    results = [
+        _make_scored("Alice", 90, "alice.pdf"),
+        ProcessingError(source_file="a.pdf", stage="parse", message="corrupt"),
+        ProcessingError(source_file="b.pdf", stage="score", message="timeout"),
+    ]
+
+    content = _report(tmp_path, results)
+
+    assert "n = 1 scored candidate)" in content
+    assert _chart_line(content, "90-100").endswith(" 1")
+
+
+def test_markdown_notes_failed_resumes_beneath_the_histogram(tmp_path: Path) -> None:
+    results = [
+        _make_scored("Alice", 90, "alice.pdf"),
+        ProcessingError(source_file="a.pdf", stage="parse", message="corrupt"),
+        ProcessingError(source_file="b.pdf", stage="score", message="timeout"),
+    ]
+
+    content = _report(tmp_path, results)
+
+    assert "2 resumes failed to process" in content
+
+
+def test_markdown_omits_failure_note_when_nothing_failed(tmp_path: Path) -> None:
+    content = _report(tmp_path, [_make_scored("Alice", 90, "alice.pdf")])
+
+    assert "failed to process" not in content

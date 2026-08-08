@@ -10,7 +10,8 @@ Three outputs:
                    "errors":     [...resumes that failed at any stage...]}
   - results.csv:  one flat row per scored candidate, ranked the same way.
                   Written only when the caller asks for it (--csv).
-  - report.md:    a ranked table plus per-candidate breakdowns and gaps.
+  - report.md:    a score histogram, a ranked table, per-candidate breakdowns
+                  and gaps.
 """
 
 import csv
@@ -101,6 +102,90 @@ def write_csv(results: list[Result], path: str | Path) -> None:
             writer.writerow(_csv_row(rank, c))
 
 
+# Score histogram, drawn at the top of report.md. The bin count is derived
+# rather than restated, so changing the width alone re-bins the whole chart.
+_MAX_SCORE = 100
+_BIN_WIDTH = 10
+_BIN_COUNT = _MAX_SCORE // _BIN_WIDTH
+
+# Widest bar we ever draw. Under this, one character means one candidate;
+# over it, every bar scales down proportionally. Plain ASCII for the bar so
+# the chart survives any terminal or encoding.
+_MAX_BAR_WIDTH = 40
+_BAR_CHAR = "#"
+
+
+def _bin_label(index: int) -> str:
+    """Render one bin's range, e.g. '0-9'. The top bin ends at 100, not 99."""
+
+    start = index * _BIN_WIDTH
+    end = _MAX_SCORE if index == _BIN_COUNT - 1 else start + _BIN_WIDTH - 1
+    return f"{start}-{end}"
+
+
+def _score_bins(candidates: list[ScoredCandidate]) -> list[int]:
+    """Count candidates per overall_fit bin. Data in, data out — no formatting.
+
+    A score of exactly 100 floor-divides into an eleventh bin, so the index is
+    clamped: the top bin is inclusive on both ends (90-100). A score of 0 lands
+    in the bottom bin like any other value — nothing here tests a score for
+    truth, which would silently drop it.
+    """
+
+    counts = [0] * _BIN_COUNT
+    for c in candidates:
+        counts[min(c.overall_fit.score // _BIN_WIDTH, _BIN_COUNT - 1)] += 1
+    return counts
+
+
+def _histogram_lines(counts: list[int], failed: int) -> list[str]:
+    """Render bin counts as an ASCII chart, highest bin first.
+
+    Bars are literal — one character per candidate — until the largest bin
+    would exceed _MAX_BAR_WIDTH, at which point every bar scales down. Exact
+    counts are printed either way, so a scaled bar is never ambiguous, and
+    every non-empty bin draws at least one character so real candidates can't
+    round away into a blank line.
+
+    Everyone landing in a single bin is a real signal — the scoring prompt
+    isn't discriminating between candidates — not a rendering bug.
+    """
+
+    lines = ["## Score distribution", ""]
+
+    total = sum(counts)
+    if total == 0:
+        lines.append("_No scored candidates to chart._")
+        return lines
+
+    scale = min(1.0, _MAX_BAR_WIDTH / max(counts))
+    bars = [_BAR_CHAR * max(1, round(n * scale)) if n > 0 else "" for n in counts]
+    bar_width = max(len(b) for b in bars)
+
+    labels = [_bin_label(i) for i in range(_BIN_COUNT)]
+    label_width = max(len(label) for label in labels)
+
+    # Fenced so markdown keeps the whitespace: without it the padding collapses
+    # and the bar column stops lining up.
+    lines.append("```")
+    lines.append(f"Overall fit distribution (n = {total} scored candidate{'' if total == 1 else 's'})")
+    lines.append("")
+    for i in reversed(range(_BIN_COUNT)):
+        lines.append(f"{labels[i]:>{label_width}} | {bars[i]:<{bar_width}}  {counts[i]}")
+    lines.append("```")
+
+    if failed > 0:
+        noun = "resume" if failed == 1 else "resumes"
+        verb = "is" if failed == 1 else "are"
+        lines.append("")
+        lines.append(
+            f"_{failed} {noun} failed to process and {verb} not counted "
+            f"in the distribution above._"
+        )
+
+    return lines
+
+
 def _bias_drift_table(audit: BiasAuditReport) -> list[str]:
     """Render the bias audit as a markdown drift table for one candidate."""
     dims = ("skills_match", "experience_match", "role_relevance", "overall_fit")
@@ -160,6 +245,9 @@ def write_markdown(
     lines.append("")
     lines.append(f"Job description: `{jd_path}`")
     lines.append(f"Candidates scored: {len(candidates)}  ·  Failed: {len(errors)}")
+    lines.append("")
+
+    lines.extend(_histogram_lines(_score_bins(candidates), len(errors)))
     lines.append("")
 
     lines.append("## Ranked candidates")

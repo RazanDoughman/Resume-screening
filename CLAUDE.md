@@ -66,7 +66,7 @@ Both entry points define their own `process_one()` that wires the same parse →
 3. `scorer.py` — profile + JD -> `ScoredCandidate` (LLM call #2, tool: `record_score`). Uses prompt caching on the JD text block (`cache_control: ephemeral`)
 4. `critique.py` — optional review pass (LLM call #3, tool: `record_critique`)
 5. `bias_auditor.py` — optional bias audit (LLM call × N swap variants). Re-scores the candidate with demographic signals swapped (name, graduation year, location) and computes score drift per dimension.
-6. `reporter.py` — writes `results.json`, `report.md`, (if `--csv`) `results.csv`, and (if audit ran) `bias_audit.json`. No LLM.
+6. `reporter.py` — writes `results.json`, `report.md`, (if `--csv`) `results.csv`, and (if audit ran) `bias_audit.json`. No LLM. `report.md` opens with an ASCII histogram of the `overall_fit` distribution — always on, no flag.
 
 **Key files:**
 - `src/models.py` — all Pydantic models (`CandidateProfile`, `ScoreReport`, `ScoredCandidate`, `CritiqueReport`, `ProcessingError`, `BiasVariant`, `BiasAuditReport`). These are the contracts between modules.

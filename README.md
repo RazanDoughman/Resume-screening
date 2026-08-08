@@ -95,7 +95,7 @@ After all resumes are processed, `run()`:
 
 1. Creates the output directory
 2. Writes `results.json` — all candidates ranked by overall_fit score, plus any errors
-3. Writes `report.md` — a readable markdown table with rankings, per-candidate score breakdowns, and gaps
+3. Writes `report.md` — an ASCII histogram of the `overall_fit` distribution, then a readable markdown table with rankings, per-candidate score breakdowns, and gaps
 4. Writes `results.csv` — only when `--csv` is passed. One flat row per
    successfully scored candidate, for spreadsheets. No LLM calls.
 
@@ -220,8 +220,10 @@ Flags:
 Outputs:
 
 - `output/results.json` — machine-readable ranked list plus any errors
-- `output/report.md` — human-readable markdown report; includes a per-candidate
-  drift table when `--bias-audit` is used
+- `output/report.md` — human-readable markdown report. Opens with an ASCII
+  histogram of `overall_fit` across the scored candidates (failed resumes are
+  excluded and noted beneath the chart); includes a per-candidate drift table
+  when `--bias-audit` is used
 - `output/results.csv` — flat one-row-per-candidate export for spreadsheets
   (only written when `--csv` is used). Scores and reasoning get one column per
   dimension; skills, education, and gaps are joined into single cells. Failed
