@@ -135,7 +135,62 @@ BS Computer Science.
 )
 
 
-ALL_CASES: list[EvalCase] = [STRONG_MATCH, WEAK_MATCH, MIXED_MATCH]
+CAREER_CHANGER_MATCH = EvalCase(
+    name="career_changer_sre_to_payments",
+    description="Senior SRE/platform engineer — right skills and seniority, platform-shaped responsibilities.",
+    jd=_PAYMENTS_JD,
+    resume_text="""Marcus Feld
+
+8 years of professional engineering experience. Currently a Staff Site
+Reliability Engineer at Northwind Cloud (4 years) on the compute platform
+team, which runs the container fleet that ~40 internal product teams deploy
+onto. Owns the provisioning control plane, a Python service driving node
+lifecycle — image builds, kernel tuning, drain-and-replace — converging
+regional fleet state under eventual consistency. Made provisioning
+idempotent so a retried job never double-allocates hardware; designed the
+PostgreSQL schema behind it, including partial indexes on the work queue
+and SERIALIZABLE isolation on lease acquisition. Operators drive it through
+a gRPC admin interface and an on-call CLI. Primary on-call across 1,500
+clusters; wrote the incident review process and led two multi-region outage
+responses. Partners with product teams on capacity planning and migration
+runbooks.
+
+Previously 4 years at Halcyon Systems as an Infrastructure Engineer. Built
+a Kafka pipeline for host telemetry and the REST service behind the fleet
+inventory dashboard the on-call team used. Migrated the deployment estate
+to Kubernetes and codified accounts, networking, and IAM in Terraform.
+
+Skills: Python, PostgreSQL, gRPC, REST, Kafka, Kubernetes, Terraform,
+Prometheus, Linux, distributed systems.
+
+BS Computer Science, Georgia Tech.
+""",
+    # skills_match and experience_match are guardrails, not claims: the
+    # candidate meets every required bullet, so a boundary hit there would
+    # confound the result rather than inform it.
+    #
+    # role_relevance is the assertion. Floor 55 keeps it well above
+    # WEAK_MATCH's 40 ceiling — fleet operations at Staff scope are far
+    # closer to this role than frontend work. Ceiling 79 keeps it under
+    # STRONG_MATCH's 80 floor — platform enablement, however senior, must
+    # not read as relevant as payments-native experience.
+    #
+    # overall_fit allows a genuinely strong hire (payments is only a
+    # nice-to-have, and every required bullet is met) while still requiring
+    # separation from STRONG_MATCH, which scores ~98 in practice.
+    expected_skills_match=(75, 100),
+    expected_experience_match=(75, 100),
+    expected_role_relevance=(55, 79),
+    expected_overall_fit=(55, 85),
+)
+
+
+ALL_CASES: list[EvalCase] = [
+    STRONG_MATCH,
+    WEAK_MATCH,
+    MIXED_MATCH,
+    CAREER_CHANGER_MATCH,
+]
 
 
 # ---------------------------------------------------------------------------
