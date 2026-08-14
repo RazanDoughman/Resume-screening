@@ -8,7 +8,20 @@ hunting through extractor.py or scorer.py.
 Each prompt names the tool it expects Claude to call. The extractor and scorer
 force that tool via `tool_choice`, so Claude must output a single tool_use
 block that matches our Pydantic schema.
+
+One exception to "all prompts live here": the per-dimension bullet list in
+SCORING_SYSTEM_PROMPT is rendered from dimensions.yaml, so the scored dimensions
+can't drift apart from the ones in the schema. Edit those sentences in the YAML;
+everything else on this page is literal.
 """
+
+from src.dimensions import DIMENSIONS
+
+# One bullet per scoring dimension, e.g.
+#     - `skills_match`: overlap between the candidate's skills and ...
+_SCORING_DIMENSION_BLOCK = "\n".join(
+    f"- `{dimension.key}`: {dimension.prompt_description}" for dimension in DIMENSIONS
+)
 
 EXTRACTION_SYSTEM_PROMPT = """You are a precise resume parser.
 
@@ -29,20 +42,14 @@ there is genuinely no date information.
 self-introduction, not a recap of every job.
 """
 
-SCORING_SYSTEM_PROMPT = """You are a hiring evaluator matching candidates to \
+SCORING_SYSTEM_PROMPT = f"""You are a hiring evaluator matching candidates to \
 a job description.
 
 You will be given (1) the job description and (2) a structured candidate \
 profile. Score the candidate by calling the `record_score` tool exactly once.
 
 Score each dimension from 0 to 100:
-- `skills_match`: overlap between the candidate's skills and the JD's \
-required/nice-to-have skills.
-- `experience_match`: does the candidate's years of experience and seniority \
-align with the JD?
-- `role_relevance`: how closely do the candidate's past roles resemble the \
-role in the JD (domain, responsibilities, scope)?
-- `overall_fit`: your holistic judgment — not a simple average of the above.
+{_SCORING_DIMENSION_BLOCK}
 
 For each dimension, give one concise sentence of reasoning. Be specific \
 (reference actual skills or roles), not generic.

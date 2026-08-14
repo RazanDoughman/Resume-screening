@@ -1,0 +1,31 @@
+# The scoring dimensions, in the order they are presented to the model.
+#
+# `key` is the field name used throughout the pipeline (models, JSON, CSV
+# columns), `label` is what a human reads in a report, and
+# `prompt_description` is the sentence handed to Claude in the scoring prompt.
+#
+# `prompt_description` is copied verbatim from SCORING_SYSTEM_PROMPT. Prompt
+# wording moves eval scores, so treat edits here as prompt changes: rerun the
+# evals and call them out in the PR, per CONTRIBUTING.MD.
+
+- key: skills_match
+  label: Skills match
+  prompt_description: >-
+    overlap between the candidate's skills and the JD's required/nice-to-have
+    skills.
+
+- key: experience_match
+  label: Experience match
+  prompt_description: >-
+    does the candidate's years of experience and seniority align with the JD?
+
+- key: role_relevance
+  label: Role relevance
+  prompt_description: >-
+    how closely do the candidate's past roles resemble the role in the JD
+    (domain, responsibilities, scope)?
+
+- key: overall_fit
+  label: Overall fit
+  prompt_description: >-
+    your holistic judgment — not a simple average of the above.

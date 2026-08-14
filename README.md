@@ -9,7 +9,8 @@ Each resume goes through three steps, each a separate Python module:
 2. **Extract** structured info — name, skills, past roles, years of experience
    (`extractor.py`, one LLM call)
 3. **Score** the candidate against the JD across four dimensions
-   (`scorer.py`, one LLM call)
+   (`scorer.py`, one LLM call) — the dimensions are configured in
+   [dimensions.yaml](dimensions.yaml)
 
 The output is a ranked JSON file plus a readable markdown report.
 
@@ -231,6 +232,49 @@ Outputs:
 - `output/bias_audit.json` — full audit data per candidate (only written when
   `--bias-audit` is used)
 
+## Scoring dimensions
+
+The four dimensions Claude scores are configuration, not code. They live in
+[dimensions.yaml](dimensions.yaml) at the project root:
+
+```yaml
+- key: skills_match
+  label: Skills match
+  prompt_description: >-
+    overlap between the candidate's skills and the JD's required/nice-to-have
+    skills.
+```
+
+- `key` — the field name used everywhere downstream: in the JSON schema Claude
+  is handed, in `results.json`, and as the `{key}_score` / `{key}_reasoning`
+  column prefix in the CSV. Renaming it renames all of those.
+- `label` — the human-readable name, for reports.
+- `prompt_description` — the sentence describing the dimension to Claude. It is
+  dropped verbatim into the scoring prompt as `` - `key`: description ``.
+
+Both the Pydantic scoring schema (`ScoreReport` / `ScoredCandidate` in
+`src/models.py`) and the scoring prompt (`SCORING_SYSTEM_PROMPT` in
+`src/prompts.py`) are built from this file at import time, so the two can't
+drift apart. `src/dimensions.py` loads and validates it — an empty list, a
+duplicate `key`, or a missing `key` / `prompt_description` fails loudly on
+startup instead of producing a half-built schema.
+
+`prompt_description` is prompt text, so editing it changes scores. Rerun the
+evals after any change:
+
+```bash
+uv run python -m src.evals
+```
+
+**Adding a fifth dimension needs more than the YAML.** The schema and the prompt
+follow automatically, but `scorer.py`, `critique.py`, `reporter.py`,
+`bias_auditor.py`, `evals.py`, `app.py`, and the `expected_*` fields in
+`tests/evals/cases.py` still name the four dimensions explicitly and must be
+updated alongside it. Editing the wording or the label of an existing dimension
+is the safe, YAML-only change.
+
+Parsing uses `pyyaml`, which `uv sync` installs along with everything else.
+
 ## Test
 
 Fast local tests for the deterministic parts of the pipeline (parser and
@@ -274,7 +318,9 @@ scores in the right direction.
 resume_matcher/
 ├── main.py              # CLI entry point — loops over resumes one at a time
 ├── pyproject.toml
+├── dimensions.yaml      # scoring dimensions — schema and prompt derive from this
 ├── src/
+│   ├── dimensions.py    # loads + validates dimensions.yaml (no LLM)
 │   ├── pdf_parser.py    # PDF -> plain text (no LLM)
 │   ├── extractor.py     # text -> CandidateProfile (LLM call)
 │   ├── scorer.py        # (profile, JD) -> ScoredCandidate (LLM call)
@@ -287,6 +333,8 @@ resume_matcher/
 ├── tests/
 │   ├── test_pdf_parser.py
 │   ├── test_reporter.py
+│   ├── test_dimensions.py       # dimensions.yaml loading + validation
+│   ├── test_dimension_wiring.py # golden prompt + schema snapshots
 │   └── evals/
 │       └── cases.py     # golden eval cases (ALL_CASES + ALL_BIAS_CASES)
 ├── sample_data/
@@ -306,6 +354,12 @@ resume_matcher/
 - **Prompts are data, code is logic.** All prompts live in
   [src/prompts.py](src/prompts.py). You can change wording without touching
   any function.
+- **Scoring dimensions are configuration, not code.** The prompt bullets and
+  the Pydantic score fields are both generated from
+  [dimensions.yaml](dimensions.yaml), so they cannot describe one set of
+  dimensions while the schema enforces another. Golden snapshot tests pin the
+  exact prompt string and the exact tool schema, so the refactor that made them
+  dynamic is provably a no-op on the wire.
 - **Bad PDFs don't crash the run.** Each resume is wrapped in try/except. A
   failure at any stage becomes a `ProcessingError` in the output instead of
   stopping the batch.

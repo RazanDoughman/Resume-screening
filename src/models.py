@@ -13,7 +13,9 @@ that schema. Pydantic then validates it on our side.
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, create_model
+
+from src.dimensions import DIMENSIONS
 
 
 class Role(BaseModel):
@@ -50,25 +52,37 @@ class Gap(BaseModel):
     detail: str
 
 
-class ScoreReport(BaseModel):
+# The per-dimension fields, built once from dimensions.yaml and inherited by
+# both scoring models. This base is the single source for the scoring *schema* —
+# ScoreReport (the JSON schema Claude is handed as the record_score tool) and
+# ScoredCandidate. Together with the bullet block prompts.py renders from the
+# same DIMENSIONS list, that covers the schema and the prompt.
+#
+# It does not reach further: reporter.py keeps its own _DIMENSIONS tuple for the
+# CSV columns and markdown breakdown, and bias_auditor.py, evals.py and app.py
+# likewise name the dimensions independently. Adding a dimension to the YAML
+# updates the schema and the prompt, but those call sites need updating too.
+#
+# Field order follows DIMENSIONS, and base-class fields come first in Pydantic,
+# so the dimensions lead in both models below. No docstring on purpose: it would
+# become the schema `description` of any subclass that lacks its own.
+DimensionScores = create_model(
+    "DimensionScores",
+    **{d.key: (DimensionScore, ...) for d in DIMENSIONS},
+)
+
+
+class ScoreReport(DimensionScores):
     """What the scorer LLM returns. The orchestrator wraps this into a ScoredCandidate."""
 
-    skills_match: DimensionScore
-    experience_match: DimensionScore
-    role_relevance: DimensionScore
-    overall_fit: DimensionScore
     reasoning: str = Field(
         description="Two-sentence overall reasoning for the scores.",
     )
     gaps: list[Gap]
 
 
-class ScoredCandidate(BaseModel):
+class ScoredCandidate(DimensionScores):
     profile: CandidateProfile
-    skills_match: DimensionScore
-    experience_match: DimensionScore
-    role_relevance: DimensionScore
-    overall_fit: DimensionScore
     reasoning: str
     gaps: list[Gap]
     source_file: str
