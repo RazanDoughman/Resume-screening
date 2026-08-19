@@ -25,8 +25,9 @@ from src.critique import critique_and_maybe_revise
 from src.extractor import DEFAULT_MODEL, extract_candidate
 from src.models import BiasAuditReport, ProcessingError, ScoredCandidate
 from src.pdf_parser import parse_pdf
-from src.reporter import write_csv, write_json, write_markdown
+from src.reporter import write_csv, write_json, write_markdown, write_usage
 from src.scorer import score_candidate
+from src.usage import MeteredClient, UsageTracker, build_report, format_summary
 
 Result = ScoredCandidate | ProcessingError
 
@@ -129,7 +130,11 @@ def run(
         + ")."
     )
 
-    client = Anthropic()
+    # MeteredClient wraps the real client and records the `usage` field of every
+    # response. The pipeline modules are untouched — they still just call
+    # client.messages.create(...).
+    tracker = UsageTracker()
+    client = MeteredClient(Anthropic(), tracker)
     results: list[Result] = []
     audits: dict[str, BiasAuditReport] = {}
 
@@ -150,9 +155,14 @@ def run(
         if audit is not None:
             audits[pdf_name] = audit
 
+    # Covers every API response that came back, including calls for resumes that
+    # later failed — the report is a record of API work, not of successes.
+    usage_report = build_report(tracker.records)
+
     os.makedirs(output_dir, exist_ok=True)
     write_json(results, os.path.join(output_dir, "results.json"))
     write_markdown(results, os.path.join(output_dir, "report.md"), jd_path, audits=audits or None)
+    write_usage(usage_report, os.path.join(output_dir, "usage.json"))
     if csv:
         write_csv(results, os.path.join(output_dir, "results.csv"))
 
@@ -166,6 +176,9 @@ def run(
             )
         flagged = sum(1 for v in audits.values() if v.flagged)
         print(f"Bias audit: {flagged}/{len(audits)} candidates flagged. See {audit_path}")
+
+    print()
+    print(format_summary(usage_report))
 
     print(f"\nDone. Output written to {output_dir}/")
     return 0

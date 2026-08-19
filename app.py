@@ -11,6 +11,7 @@ from src.extractor import DEFAULT_MODEL, extract_candidate
 from src.models import BiasAuditReport, ProcessingError, ScoredCandidate
 from src.pdf_parser import parse_pdf
 from src.scorer import score_candidate
+from src.usage import MeteredClient, UsageTracker, build_report, format_summary
 
 load_dotenv()
 
@@ -111,8 +112,10 @@ if st.button("Match Resumes", type="primary"):
     with st.expander("Parsed Job Description"):
         st.text(jd_text)
 
-    # Process each resume
-    client = Anthropic()
+    # Process each resume. MeteredClient records the `usage` field of every
+    # response so we can show the run's token counts and estimated cost below.
+    tracker = UsageTracker()
+    client = MeteredClient(Anthropic(), tracker)
     pairs: list[tuple[Result, BiasAuditReport | None]] = []
     progress = st.progress(0, text="Processing resumes...")
 
@@ -238,3 +241,9 @@ if st.button("Match Resumes", type="primary"):
         st.subheader("Errors")
         for e in errors:
             st.error(f"**{e.source_file}** failed at `{e.stage}`: {e.message}")
+
+    # ── API usage and estimated cost ──
+    # Reuses the CLI's format_summary verbatim so the two entry points can't
+    # drift. The app writes no files, so there is no usage.json here.
+    st.subheader("API Usage")
+    st.code(format_summary(build_report(tracker.records)))

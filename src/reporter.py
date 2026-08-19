@@ -5,13 +5,16 @@ disk as machine-readable JSON and CSV, plus a human-readable markdown report.
 No LLM calls here — this is a pure transform from Pydantic models to text.
 That's why test_reporter.py can run in milliseconds with no API key.
 
-Three outputs:
+Four outputs:
   - results.json: {"candidates": [...sorted by overall_fit desc...],
                    "errors":     [...resumes that failed at any stage...]}
   - results.csv:  one flat row per scored candidate, ranked the same way.
                   Written only when the caller asks for it (--csv).
   - report.md:    a score histogram, a ranked table, per-candidate breakdowns
                   and gaps.
+  - usage.json:   token counts and estimated cost for the run. The numbers are
+                  computed in usage.py; this module only serializes them, and
+                  knows nothing about pricing.
 """
 
 import csv
@@ -20,6 +23,7 @@ from pathlib import Path
 
 from src.bias_auditor import VARIANT_DISPLAY_LABELS
 from src.models import BiasAuditReport, ProcessingError, ScoredCandidate
+from src.usage import UsageReport
 
 Result = ScoredCandidate | ProcessingError
 
@@ -40,6 +44,16 @@ def write_json(results: list[Result], path: str | Path) -> None:
         "errors": [e.model_dump() for e in errors],
     }
     Path(path).write_text(json.dumps(payload, indent=2))
+
+
+def write_usage(report: UsageReport, path: str | Path) -> None:
+    """Write a run's token usage and estimated cost to a JSON file.
+
+    The report arrives fully computed — `UsageReport.to_dict()` owns the schema
+    and the Decimal-to-number conversion, so this stays a serializer.
+    """
+
+    Path(path).write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8")
 
 
 # Separator for list-valued cells (skills, education, gaps). Semicolon rather

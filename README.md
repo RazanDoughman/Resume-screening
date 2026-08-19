@@ -137,6 +137,9 @@ object**. This guarantees structured, typed output every time.
 - An **eval harness** for testing LLM pipelines, because you can't assert
   exact-score equality on a probabilistic output. Includes both scoring
   range evals and bias stability evals.
+- A **cost reporter** that reads the `usage` field most engineers never look
+  at, showing where the tokens actually went — and why "input tokens" is not
+  the same number as "prompt tokens" once caching is on.
 
 No asyncio, no frameworks, no agent libraries. Everything is plain
 synchronous Python you can read top-to-bottom in one sitting.
@@ -231,6 +234,8 @@ Outputs:
   resumes are omitted — they stay in `results.json`
 - `output/bias_audit.json` — full audit data per candidate (only written when
   `--bias-audit` is used)
+- `output/usage.json` — token counts and estimated cost for the run. Always
+  written; see [Cost reporting](#cost-reporting) below
 
 ## Scoring dimensions
 
@@ -274,6 +279,64 @@ updated alongside it. Editing the wording or the label of an existing dimension
 is the safe, YAML-only change.
 
 Parsing uses `pyyaml`, which `uv sync` installs along with everything else.
+
+## Cost reporting
+
+Every run prints a token and cost breakdown at the end and writes the same
+numbers to `output/usage.json`. There is no flag — it costs nothing, because it
+only reads the `usage` field the API already returns on every response.
+
+```text
+API Usage
+--------------------------------
+Model:  claude-sonnet-4-6
+
+API calls:                   12
+Uncached input tokens:   12,480
+Cache read tokens:        9,900
+Cache creation tokens:    1,240
+Total prompt tokens:     23,620
+Output tokens:            8,150
+
+Estimated cost:         $0.1639
+```
+
+The four token categories are not interchangeable, and the difference is the
+main thing this report exists to show:
+
+- **Uncached input tokens** — prompt tokens processed at the full input price.
+  This is the API's `input_tokens` field, and on its own it is **not** the size
+  of the prompt: when prompt caching is working, most of the prompt shows up in
+  the two cache lines instead.
+- **Cache read tokens** — prompt tokens served from the cache, at roughly a
+  tenth of the input price. The job description is cached, so re-scoring the
+  same JD against many resumes should land here.
+- **Cache creation tokens** — prompt tokens written into the cache, at a small
+  premium over the input price. Expect these on the first scoring call of a run.
+- **Total prompt tokens** — the sum of the three above. This is the real prompt
+  size.
+- **Output tokens** — everything Claude generated.
+
+The API reports cached *token counts*, not a count of cache-hit events, so this
+report shows token counts and does not invent a "cache hits" number.
+
+The cost is an **estimate**, not an invoice. It is computed from a local pricing
+table in [src/usage.py](src/usage.py) that records Anthropic's published list
+prices along with the date they were verified. Your actual bill can differ
+because prices change, because negotiated or batch rates differ from list, and
+because the figure is rounded. If a run uses a model that is not in the table,
+the token counts are still reported in full and the cost reads
+`unavailable - no pricing entry for '<model>'` rather than `$0.00` — a zero
+would be indistinguishable from a free run.
+
+Every API response that comes back is counted, including calls for resumes that
+later failed to parse or validate. The report describes API work that actually
+happened, not just the candidates that made it into `results.json`. A request
+that never returns a response — a connection error, say — has no usage to read
+and cannot be counted.
+
+The Streamlit UI shows the same summary at the bottom of a run. It writes no
+files, so there is no `usage.json` there.
 
 ## Test
 
@@ -327,12 +390,14 @@ resume_matcher/
 │   ├── critique.py      # optional 2nd-pass review (LLM call)
 │   ├── bias_auditor.py  # optional bias audit — re-scores with swapped demographic signals
 │   ├── reporter.py      # results -> JSON + markdown + optional CSV (+ bias drift table)
+│   ├── usage.py         # token accounting + pricing + cost estimate (no LLM)
 │   ├── prompts.py       # every LLM prompt in one place
 │   ├── models.py        # Pydantic contracts
 │   └── evals.py         # eval harness runner (scoring + bias stability)
 ├── tests/
 │   ├── test_pdf_parser.py
 │   ├── test_reporter.py
+│   ├── test_usage.py            # token math, pricing, MeteredClient
 │   ├── test_dimensions.py       # dimensions.yaml loading + validation
 │   ├── test_dimension_wiring.py # golden prompt + schema snapshots
 │   └── evals/
