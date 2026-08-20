@@ -118,6 +118,17 @@ Bias audit report
 results.json + report.md + results.csv + bias_audit.json
 ```
 
+Every stage above runs once per resume. One stage doesn't: after the whole
+batch is scored, `--deep-dive-top N` ranks the field and makes one more call
+for each of the top N candidates only.
+
+```
+all resumes scored
+   |  rank by overall_fit, take top N
+   |  Claude + tool use (one call per selected candidate, optional)
+Hiring-manager briefings -> report.md
+```
+
 The key pattern that repeats in every LLM call: **define a tool from a Pydantic
 schema -> force Claude to call it -> validate the response back into a Pydantic
 object**. This guarantees structured, typed output every time.
@@ -207,6 +218,16 @@ python main.py \
     --csv
 ```
 
+With deep-dive briefings — after everyone is scored and ranked, write a
+hiring-manager briefing for the top 3:
+
+```bash
+python main.py \
+    --jd sample_data/sample_jd.txt \
+    --resumes sample_data/resumes/ \
+    --deep-dive-top 3
+```
+
 Flags:
 
 - `--model MODEL_ID` — override the Claude model (default: `claude-sonnet-4-6`)
@@ -220,6 +241,9 @@ Flags:
   also include location variants.
 - `--csv` — also write `results.csv`, one flat row per successfully scored
   candidate. Pure logic, no extra LLM calls, so it costs nothing to turn on.
+- `--deep-dive-top N` — after scoring, write a hiring-manager briefing for the
+  top N ranked candidates. Adds **N LLM calls in total, not N per resume** —
+  see [Deep-dive briefings](#deep-dive-briefings) below. Default 0 (off).
 
 Outputs:
 
@@ -227,7 +251,8 @@ Outputs:
 - `output/report.md` — human-readable markdown report. Opens with an ASCII
   histogram of `overall_fit` across the scored candidates (failed resumes are
   excluded and noted beneath the chart); includes a per-candidate drift table
-  when `--bias-audit` is used
+  when `--bias-audit` is used, and a hiring-manager briefing for each selected
+  candidate when `--deep-dive-top` is used
 - `output/results.csv` — flat one-row-per-candidate export for spreadsheets
   (only written when `--csv` is used). Scores and reasoning get one column per
   dimension; skills, education, and gaps are joined into single cells. Failed
@@ -338,6 +363,54 @@ and cannot be counted.
 The Streamlit UI shows the same summary at the bottom of a run. It writes no
 files, so there is no `usage.json` there.
 
+## Deep-dive briefings
+
+Scoring answers *who is at the top*. It doesn't answer *what do I do with
+them*. `--deep-dive-top N` adds that second question, for the shortlist only.
+
+```bash
+python main.py \
+    --jd sample_data/sample_jd.txt \
+    --resumes sample_data/resumes/ \
+    --deep-dive-top 3
+```
+
+After every resume has been scored and the field ranked, the top N candidates
+each get one more LLM call that returns a briefing for a hiring manager:
+
+- a paragraph on what the candidate would bring and where the uncertainty is
+- **strengths** — concrete, tied to their actual background
+- **risks** — shortfalls and things to verify, seeded from the screener's gaps
+- **suggested interview questions** — aimed at those specific risks
+
+**It is opt-in.** Omit the flag, or pass `0`, and nothing changes: no extra
+calls, no extra output, byte-identical reports.
+
+**It costs O(N selected), not O(resumes).** Every other optional stage
+multiplies by the resume count — `--bias-audit` on 10 resumes adds 60 calls.
+Deep-dive adds exactly N, whether you screened 10 resumes or 500. That's the
+point of the feature: screen wide and cheap, then spend real tokens only on
+the people you might actually interview.
+
+```
+10 resumes, no flags:            20 calls
+10 resumes, --deep-dive-top 3:   23 calls
+500 resumes, --deep-dive-top 3: 1003 calls
+```
+
+**Where it shows up.** `report.md` only, in each selected candidate's section,
+after their gaps and before their bias-audit table. Candidates outside the top
+N are rendered exactly as before — no placeholder.
+
+`results.json` and `results.csv` are **unchanged**, by design. A briefing is an
+optional analysis of a handful of candidates, not a property of a candidate, so
+it never touches the machine-readable schemas that every other candidate shares.
+
+**Ties are cut strictly.** Ranking is `overall_fit` descending, then
+`source_file` ascending, so it is deterministic. `--deep-dive-top 3` always
+means exactly three calls, even when candidates 3 and 4 share a score — the run
+prints a note naming who was cut and what N would have included them.
+
 ## Test
 
 Fast local tests for the deterministic parts of the pipeline (parser and
@@ -370,8 +443,21 @@ uv run python -m src.evals --bias
 
 Run only the bias stability cases (faster when iterating on audit prompts).
 
+```bash
+uv run python -m src.evals --deep-dive
+```
+
+Run only the deep-dive cases. These check the *shape* of a briefing rather
+than its prose: a summary of real length, at least two strengths, at least one
+risk, at least three interview questions, and at least one distinctive term
+from that candidate's own resume — which is what separates a real analysis
+from a generic template. Prose quality would need a judge model; these
+assertions survive normal LLM variation and still fail on a prompt regression.
+
 Add a scoring case by appending to `ALL_CASES`. Add a bias stability case
-by appending to `ALL_BIAS_CASES` using the `BiasAuditEvalCase` dataclass.
+by appending to `ALL_BIAS_CASES` using the `BiasAuditEvalCase` dataclass. Add
+a deep-dive case by appending to `ALL_DEEP_DIVE_CASES` using the
+`DeepDiveEvalCase` dataclass.
 When you iterate on a prompt, run the evals to see whether the change moved
 scores in the right direction.
 
@@ -388,6 +474,7 @@ resume_matcher/
 │   ├── extractor.py     # text -> CandidateProfile (LLM call)
 │   ├── scorer.py        # (profile, JD) -> ScoredCandidate (LLM call)
 │   ├── critique.py      # optional 2nd-pass review (LLM call)
+│   ├── deep_dive.py     # optional hiring-manager briefing for the top N (LLM call)
 │   ├── bias_auditor.py  # optional bias audit — re-scores with swapped demographic signals
 │   ├── reporter.py      # results -> JSON + markdown + optional CSV (+ bias drift table)
 │   ├── usage.py         # token accounting + pricing + cost estimate (no LLM)
@@ -398,6 +485,8 @@ resume_matcher/
 │   ├── test_pdf_parser.py
 │   ├── test_reporter.py
 │   ├── test_usage.py            # token math, pricing, MeteredClient
+│   ├── test_deep_dive.py        # deep-dive tool wiring, caching, top-N selection
+│   ├── test_main_deep_dive.py   # deep-dive orchestration in main.run()
 │   ├── test_dimensions.py       # dimensions.yaml loading + validation
 │   ├── test_dimension_wiring.py # golden prompt + schema snapshots
 │   └── evals/
@@ -431,6 +520,12 @@ resume_matcher/
 - **Opt-in quality flag.** `--self-critique` is off by default so a basic
   run costs two LLM calls per resume. Turn it on when you want to add a
   reflection pass.
+- **Deep-dive spends tokens where the decision is.** Every other optional
+  stage costs O(resumes); `--deep-dive-top N` costs O(N selected). Screening
+  stays cheap enough to run wide, and the expensive analysis lands only on the
+  shortlist. It is also purely additive: the briefings live in `report.md`
+  alongside a sidecar dict in memory, so `ScoredCandidate`, `results.json` and
+  the CSV columns are untouched whether the flag is on or off.
 - **Bias audit is additive, not destructive.** `--bias-audit` appends a
   drift table to each candidate's section in `report.md` and writes a
   separate `bias_audit.json`. It never changes scores — it only reports

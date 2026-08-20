@@ -234,3 +234,65 @@ BS Computer Science, University of Michigan, 2013.
 )
 
 ALL_BIAS_CASES: list[BiasAuditEvalCase] = [BIAS_STABILITY]
+
+
+# ---------------------------------------------------------------------------
+# Deep-dive eval cases
+#
+# These test that a briefing is *usable*, not that it is well written. Prose
+# quality needs a judge model; what a structural check can protect is the
+# failure mode a prompt edit actually causes — a briefing that goes generic,
+# or that drops the risks a hiring manager came for.
+#
+# The assertions are floors and a keyword probe, in the same spirit as the
+# score ranges above: they hold across normal LLM variation and fail on a real
+# regression.
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class DeepDiveEvalCase:
+    name: str
+    description: str
+    jd: str
+    resume_text: str
+    # Structural floors. Deliberately not content assertions.
+    min_summary_words: int
+    min_pros: int
+    min_cons: int
+    min_questions: int
+    # At least one of these must appear somewhere in the briefing. Any-of, not
+    # all-of: a genuine analysis of this resume will hit one, a generic
+    # template hits none, and phrasing is free to vary.
+    must_mention_any: tuple[str, ...]
+
+
+DEEP_DIVE_STRONG = DeepDiveEvalCase(
+    name="deep_dive_strong_match",
+    description=(
+        "A near-perfect candidate must still yield concrete risks and "
+        "candidate-specific interview questions, not generic praise."
+    ),
+    jd=_PAYMENTS_JD,
+    resume_text=STRONG_MATCH.resume_text,
+    # A hiring-manager paragraph, not a sentence.
+    min_summary_words=40,
+    min_pros=2,
+    # The load-bearing one. Handed a 95-scoring candidate, a model will happily
+    # return an empty cons list — which makes the briefing worthless precisely
+    # where a hiring manager needs a counterweight. The prompt forbids it; this
+    # is what notices when a prompt edit stops enforcing that.
+    min_cons=1,
+    min_questions=3,
+    must_mention_any=(
+        "Stripe",
+        "Braintree",
+        "Issuing",
+        "idempotency",
+        "Kafka",
+        "PCI",
+    ),
+)
+
+
+ALL_DEEP_DIVE_CASES: list[DeepDiveEvalCase] = [DEEP_DIVE_STRONG]

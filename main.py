@@ -22,10 +22,22 @@ load_dotenv()
 
 from src.bias_auditor import run_bias_audit
 from src.critique import critique_and_maybe_revise
+from src.deep_dive import generate_deep_dive
 from src.extractor import DEFAULT_MODEL, extract_candidate
-from src.models import BiasAuditReport, ProcessingError, ScoredCandidate
+from src.models import (
+    BiasAuditReport,
+    DeepDiveReport,
+    ProcessingError,
+    ScoredCandidate,
+)
 from src.pdf_parser import parse_pdf
-from src.reporter import write_csv, write_json, write_markdown, write_usage
+from src.reporter import (
+    rank_candidates,
+    write_csv,
+    write_json,
+    write_markdown,
+    write_usage,
+)
 from src.scorer import score_candidate
 from src.usage import MeteredClient, UsageTracker, build_report, format_summary
 
@@ -99,6 +111,7 @@ def run(
     self_critique: bool,
     bias_audit: bool,
     csv: bool,
+    deep_dive_top: int = 0,
 ) -> int:
     import json
 
@@ -129,6 +142,14 @@ def run(
         + (f", bias-audit={calls_per_resume - 2 - self_critique}" if bias_audit else "")
         + ")."
     )
+    # Deep-dive is priced separately because it is the one stage that doesn't
+    # multiply by the resume count: it runs once per selected candidate.
+    if deep_dive_top > 0:
+        print(
+            f"Deep-dive: up to {deep_dive_top} extra LLM call"
+            f"{'' if deep_dive_top == 1 else 's'} total (top-{deep_dive_top} "
+            f"candidates only, not per resume)."
+        )
 
     # MeteredClient wraps the real client and records the `usage` field of every
     # response. The pipeline modules are untouched — they still just call
@@ -155,13 +176,58 @@ def run(
         if audit is not None:
             audits[pdf_name] = audit
 
+    # Deep-dive the top N. A post-scoring batch stage, not part of process_one:
+    # "top N" is undefined until the whole field has been scored and ranked.
+    #
+    # This must stay above build_report — these calls go through the same
+    # MeteredClient, but only the responses recorded before the report is built
+    # can appear in it.
+    deep_dives: dict[str, DeepDiveReport] = {}
+    if deep_dive_top > 0:
+        ranked = rank_candidates(results)
+        selected = ranked[:deep_dive_top]
+
+        if selected:
+            print(f"\nDeep-dive: briefing top {len(selected)} of {len(ranked)}...")
+
+            # Strict N: a candidate tied with the last one picked is still cut,
+            # so the cost stays exactly what the flag promised. Say so rather
+            # than letting a filename quietly decide it.
+            cutoff = selected[-1].overall_fit.score
+            tied = [c for c in ranked[len(selected):] if c.overall_fit.score == cutoff]
+            if tied:
+                print(
+                    f"  note: {', '.join(c.source_file for c in tied)} also "
+                    f"scored {cutoff} but was not included "
+                    f"(raise --deep-dive-top to {len(selected) + len(tied)})."
+                )
+        else:
+            print("\nDeep-dive: no scored candidates to brief.")
+
+        for c in selected:
+            try:
+                deep_dives[c.source_file] = generate_deep_dive(
+                    client, c, jd, model=model
+                )
+                print(f"  {c.source_file}: briefed ({c.profile.name})")
+            except Exception as e:
+                # Enrichment only. A failed briefing leaves the scored
+                # candidate untouched and never becomes a ProcessingError.
+                print(f"  {c.source_file}: deep-dive failed ({e}) — skipping")
+
     # Covers every API response that came back, including calls for resumes that
     # later failed — the report is a record of API work, not of successes.
     usage_report = build_report(tracker.records)
 
     os.makedirs(output_dir, exist_ok=True)
     write_json(results, os.path.join(output_dir, "results.json"))
-    write_markdown(results, os.path.join(output_dir, "report.md"), jd_path, audits=audits or None)
+    write_markdown(
+        results,
+        os.path.join(output_dir, "report.md"),
+        jd_path,
+        audits=audits or None,
+        deep_dives=deep_dives or None,
+    )
     write_usage(usage_report, os.path.join(output_dir, "usage.json"))
     if csv:
         write_csv(results, os.path.join(output_dir, "results.csv"))
@@ -182,6 +248,23 @@ def run(
 
     print(f"\nDone. Output written to {output_dir}/")
     return 0
+
+
+def _non_negative_int(value: str) -> int:
+    """argparse type for --deep-dive-top.
+
+    Rejects negatives rather than passing them to a list slice, where `[:-1]`
+    silently means "all but the last" — a wrong answer that would spend money
+    before anyone noticed. Zero is allowed and means off.
+    """
+
+    try:
+        n = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{value!r} is not an integer.")
+    if n < 0:
+        raise argparse.ArgumentTypeError(f"must be 0 or greater, got {n}.")
+    return n
 
 
 def main() -> int:
@@ -227,6 +310,17 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--deep-dive-top",
+        type=_non_negative_int,
+        default=0,
+        metavar="N",
+        help=(
+            "Write a hiring-manager briefing (summary, pros, cons, interview "
+            "questions) for the top N ranked candidates, in report.md. Adds N "
+            "LLM calls in total, not N per resume. Default 0 (off)."
+        ),
+    )
+    parser.add_argument(
         "--csv",
         action="store_true",
         help=(
@@ -256,6 +350,7 @@ def main() -> int:
         args.self_critique,
         args.bias_audit,
         args.csv,
+        args.deep_dive_top,
     )
 
 

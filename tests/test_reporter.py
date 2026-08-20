@@ -5,16 +5,21 @@ import json
 from pathlib import Path
 
 from src.models import (
+    BiasAuditReport,
     CandidateProfile,
+    DeepDiveReport,
     DimensionScore,
     Gap,
     ProcessingError,
     Role,
     ScoredCandidate,
+    ScoreReport,
 )
 from src.reporter import (
     _BIN_COUNT,
+    _COLUMNS,
     _score_bins,
+    rank_candidates,
     write_csv,
     write_json,
     write_markdown,
@@ -412,3 +417,324 @@ def test_markdown_omits_failure_note_when_nothing_failed(tmp_path: Path) -> None
     content = _report(tmp_path, [_make_scored("Alice", 90, "alice.pdf")])
 
     assert "failed to process" not in content
+
+
+# ---------------------------------------------------------------------------
+# Deep-dive rendering (Challenge 5)
+#
+# The sidecar defaults to None, so every test above this line exercises the
+# "feature off" path. These cover the "feature on" one.
+# ---------------------------------------------------------------------------
+
+
+def _deep_dive(summary: str = "Alice owns the ledger at Brex.") -> DeepDiveReport:
+    return DeepDiveReport(
+        summary=summary,
+        pros=["Owned a card ledger", "Nine years in payments"],
+        cons=["No Go in production", "Lead scope unproven"],
+        interview_questions=[
+            "Walk through the replay logic.",
+            "Describe a settlement mismatch you handled.",
+            "What would you change about that schema?",
+        ],
+    )
+
+
+def _bias_audit() -> BiasAuditReport:
+    scores = ScoreReport(
+        skills_match=DimensionScore(score=90, reasoning="s"),
+        experience_match=DimensionScore(score=90, reasoning="e"),
+        role_relevance=DimensionScore(score=90, reasoning="r"),
+        overall_fit=DimensionScore(score=90, reasoning="o"),
+        reasoning="Baseline reasoning.",
+        gaps=[],
+    )
+    return BiasAuditReport(
+        baseline=scores,
+        variants=[],
+        max_score_drift=0.0,
+        flagged=False,
+    )
+
+
+def test_markdown_is_byte_identical_when_no_deep_dives_are_passed(
+    tmp_path: Path,
+) -> None:
+    """The core no-regression check: the sidecar must be inert when absent."""
+
+    results = [
+        _make_scored("Alice", 90, "alice.pdf"),
+        _make_scored("Bob", 70, "bob.pdf"),
+        ProcessingError(source_file="broken.pdf", stage="parse", message="corrupt"),
+    ]
+
+    default = tmp_path / "default.md"
+    explicit = tmp_path / "explicit.md"
+    empty = tmp_path / "empty.md"
+
+    write_markdown(results, default, Path("jd.txt"))
+    write_markdown(results, explicit, Path("jd.txt"), deep_dives=None)
+    write_markdown(results, empty, Path("jd.txt"), deep_dives={})
+
+    baseline = default.read_text(encoding="utf-8")
+    assert explicit.read_text(encoding="utf-8") == baseline
+    assert empty.read_text(encoding="utf-8") == baseline
+    assert "Deep-Dive" not in baseline
+
+
+def test_markdown_renders_the_deep_dive_section(tmp_path: Path) -> None:
+    out = tmp_path / "report.md"
+    write_markdown(
+        [_make_scored("Alice", 90, "alice.pdf")],
+        out,
+        Path("jd.txt"),
+        deep_dives={"alice.pdf": _deep_dive()},
+    )
+    content = out.read_text(encoding="utf-8")
+
+    assert "**Hiring Manager Deep-Dive**" in content
+    assert "Alice owns the ledger at Brex." in content
+    assert "_Strengths_" in content
+    assert "_Risks_" in content
+    assert "_Suggested interview questions_" in content
+
+
+def test_markdown_renders_every_pro_con_and_question_as_a_bullet(
+    tmp_path: Path,
+) -> None:
+    report = _deep_dive()
+    out = tmp_path / "report.md"
+    write_markdown(
+        [_make_scored("Alice", 90, "alice.pdf")],
+        out,
+        Path("jd.txt"),
+        deep_dives={"alice.pdf": report},
+    )
+    content = out.read_text(encoding="utf-8")
+
+    for item in report.pros + report.cons + report.interview_questions:
+        assert f"- {item}" in content
+
+
+def test_markdown_deep_dives_only_the_matching_candidate(tmp_path: Path) -> None:
+    out = tmp_path / "report.md"
+    write_markdown(
+        [
+            _make_scored("Alice", 90, "alice.pdf"),
+            _make_scored("Bob", 70, "bob.pdf"),
+        ],
+        out,
+        Path("jd.txt"),
+        deep_dives={"alice.pdf": _deep_dive()},
+    )
+    content = out.read_text(encoding="utf-8")
+
+    assert content.count("**Hiring Manager Deep-Dive**") == 1
+    # The briefing sits inside Alice's section, above Bob's heading.
+    assert content.index("**Hiring Manager Deep-Dive**") < content.index("### Bob")
+
+
+def test_markdown_shows_no_placeholder_for_candidates_without_a_deep_dive(
+    tmp_path: Path,
+) -> None:
+    out = tmp_path / "report.md"
+    write_markdown(
+        [
+            _make_scored("Alice", 90, "alice.pdf"),
+            _make_scored("Bob", 70, "bob.pdf"),
+        ],
+        out,
+        Path("jd.txt"),
+        deep_dives={"alice.pdf": _deep_dive()},
+    )
+    content = out.read_text(encoding="utf-8")
+
+    for phrase in ("not deep-dived", "No deep-dive", "not analyzed", "N/A"):
+        assert phrase not in content
+
+
+def test_markdown_renders_deep_dive_and_bias_audit_together(tmp_path: Path) -> None:
+    out = tmp_path / "report.md"
+    write_markdown(
+        [_make_scored("Alice", 90, "alice.pdf")],
+        out,
+        Path("jd.txt"),
+        audits={"alice.pdf": _bias_audit()},
+        deep_dives={"alice.pdf": _deep_dive()},
+    )
+    content = out.read_text(encoding="utf-8")
+
+    assert "**Hiring Manager Deep-Dive**" in content
+    assert "**Bias Audit**" in content
+
+
+def test_markdown_places_the_deep_dive_after_gaps_and_before_bias_audit(
+    tmp_path: Path,
+) -> None:
+    out = tmp_path / "report.md"
+    write_markdown(
+        [_make_scored("Alice", 90, "alice.pdf")],
+        out,
+        Path("jd.txt"),
+        audits={"alice.pdf": _bias_audit()},
+        deep_dives={"alice.pdf": _deep_dive()},
+    )
+    content = out.read_text(encoding="utf-8")
+
+    assert (
+        content.index("**Gaps**")
+        < content.index("**Hiring Manager Deep-Dive**")
+        < content.index("**Bias Audit**")
+    )
+
+
+def test_markdown_keeps_the_histogram_first_when_deep_dives_render(
+    tmp_path: Path,
+) -> None:
+    out = tmp_path / "report.md"
+    write_markdown(
+        [_make_scored("Alice", 90, "alice.pdf")],
+        out,
+        Path("jd.txt"),
+        deep_dives={"alice.pdf": _deep_dive()},
+    )
+    content = out.read_text(encoding="utf-8")
+
+    assert (
+        content.index("## Score distribution")
+        < content.index("## Ranked candidates")
+        < content.index("**Hiring Manager Deep-Dive**")
+    )
+
+
+def test_markdown_keeps_the_score_breakdown_when_deep_dives_render(
+    tmp_path: Path,
+) -> None:
+    out = tmp_path / "report.md"
+    write_markdown(
+        [_make_scored("Alice", 90, "alice.pdf")],
+        out,
+        Path("jd.txt"),
+        deep_dives={"alice.pdf": _deep_dive()},
+    )
+    content = out.read_text(encoding="utf-8")
+
+    assert "**Score breakdown**" in content
+    assert "- Skills (85): Skills reason" in content
+
+
+def test_markdown_handles_pipes_and_newlines_in_deep_dive_prose(
+    tmp_path: Path,
+) -> None:
+    """Bullets, not a table - so a pipe in model prose cannot break the layout."""
+
+    report = DeepDiveReport(
+        summary="Ran the a|b split test.",
+        pros=["Owns pipe | delimited parsing"],
+        cons=["Unclear scope | ambiguous title"],
+        interview_questions=["What does staff | principal mean at your company?"],
+    )
+    out = tmp_path / "report.md"
+    write_markdown(
+        [_make_scored("Alice", 90, "alice.pdf")],
+        out,
+        Path("jd.txt"),
+        deep_dives={"alice.pdf": report},
+    )
+    content = out.read_text(encoding="utf-8")
+
+    assert "- Owns pipe | delimited parsing" in content
+    assert "Ran the a|b split test." in content
+
+
+def test_json_and_csv_ignore_the_deep_dive_sidecar(tmp_path: Path) -> None:
+    """Neither writer takes the parameter, so neither output can change."""
+
+    results = [
+        _make_scored("Alice", 90, "alice.pdf"),
+        _make_scored("Bob", 70, "bob.pdf"),
+    ]
+
+    json_out = tmp_path / "results.json"
+    csv_out = tmp_path / "results.csv"
+    write_json(results, json_out)
+    write_csv(results, csv_out)
+
+    raw = json_out.read_text(encoding="utf-8")
+    assert "deep_dive" not in raw
+    assert set(json.loads(raw)) == {"candidates", "errors"}
+
+    header = csv_out.read_text(encoding="utf-8").splitlines()[0]
+    assert header.split(",") == list(_COLUMNS)
+    assert "deep_dive" not in header
+
+
+# ---------------------------------------------------------------------------
+# rank_candidates - the single ranking definition (Challenge 5)
+# ---------------------------------------------------------------------------
+
+
+def test_rank_candidates_sorts_by_overall_fit_descending() -> None:
+    ranked = rank_candidates(
+        [
+            _make_scored("Bob", 70, "bob.pdf"),
+            _make_scored("Alice", 90, "alice.pdf"),
+            _make_scored("Carol", 80, "carol.pdf"),
+        ]
+    )
+
+    assert [c.profile.name for c in ranked] == ["Alice", "Carol", "Bob"]
+
+
+def test_rank_candidates_drops_processing_errors() -> None:
+    ranked = rank_candidates(
+        [
+            _make_scored("Alice", 90, "alice.pdf"),
+            ProcessingError(source_file="x.pdf", stage="parse", message="corrupt"),
+        ]
+    )
+
+    assert [c.profile.name for c in ranked] == ["Alice"]
+
+
+def test_rank_candidates_breaks_ties_on_source_file() -> None:
+    ranked = rank_candidates(
+        [
+            _make_scored("Zoe", 88, "zeta.pdf"),
+            _make_scored("Amy", 88, "alpha.pdf"),
+        ]
+    )
+
+    assert [c.source_file for c in ranked] == ["alpha.pdf", "zeta.pdf"]
+
+
+def test_rank_candidates_is_independent_of_input_order() -> None:
+    results = [
+        _make_scored("Amy", 88, "alpha.pdf"),
+        _make_scored("Zoe", 88, "zeta.pdf"),
+        _make_scored("Bob", 70, "bob.pdf"),
+    ]
+
+    forward = [c.source_file for c in rank_candidates(results)]
+    backward = [c.source_file for c in rank_candidates(list(reversed(results)))]
+    assert forward == backward
+
+
+def test_rank_candidates_returns_empty_for_no_input() -> None:
+    assert rank_candidates([]) == []
+
+
+def test_reports_rank_the_same_way_rank_candidates_does(tmp_path: Path) -> None:
+    """The invariant deep-dive selection relies on."""
+
+    results = [
+        _make_scored("Zoe", 88, "zeta.pdf"),
+        _make_scored("Alice", 94, "alice.pdf"),
+        _make_scored("Amy", 88, "alpha.pdf"),
+    ]
+
+    out = tmp_path / "results.json"
+    write_json(results, out)
+    reported = [c["source_file"] for c in json.loads(out.read_text())["candidates"]]
+
+    assert reported == [c.source_file for c in rank_candidates(results)]

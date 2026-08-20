@@ -146,3 +146,46 @@ class BiasAuditReport(BaseModel):
         default=None,
         description="Plain-English explanation of what drifted and by how much.",
     )
+
+
+class DeepDiveReport(BaseModel):
+    """A hiring-manager briefing for one shortlisted candidate.
+
+    Produced only for the top N candidates (`--deep-dive-top`), after scoring
+    has finished and the field is ranked.
+
+    Deliberately *not* a field on ScoredCandidate. A deep-dive is an optional
+    analysis of a subset of candidates, not a property of one: nesting it here
+    would put a `"deep_dive": null` key into every candidate object in
+    results.json, and widen the CSV's schema, for a briefing most candidates
+    never receive. It travels beside the results instead, in a dict keyed by
+    source_file — the same sidecar pattern BiasAuditReport already uses.
+    """
+
+    summary: str = Field(
+        description=(
+            "One paragraph written for a hiring manager deciding whether to "
+            "interview this candidate. Reference this candidate's actual "
+            "experience — no generic praise."
+        ),
+    )
+    pros: list[str] = Field(
+        description=(
+            "Concrete strengths for this specific role, each tied to something "
+            "in the candidate's background. 2-4 items."
+        ),
+    )
+    cons: list[str] = Field(
+        description=(
+            "Concrete risks, shortfalls, or things to verify before hiring. "
+            "2-4 items. Never empty — if the candidate is exceptional, name "
+            "what still needs checking."
+        ),
+    )
+    interview_questions: list[str] = Field(
+        description=(
+            "3-5 questions targeting this candidate's specific risks, gaps, "
+            "and uncertainties. A question that could be asked of any "
+            "candidate for this role does not belong here."
+        ),
+    )

@@ -22,17 +22,41 @@ import json
 from pathlib import Path
 
 from src.bias_auditor import VARIANT_DISPLAY_LABELS
-from src.models import BiasAuditReport, ProcessingError, ScoredCandidate
+from src.models import (
+    BiasAuditReport,
+    DeepDiveReport,
+    ProcessingError,
+    ScoredCandidate,
+)
 from src.usage import UsageReport
 
 Result = ScoredCandidate | ProcessingError
 
 
-def _split(results: list[Result]) -> tuple[list[ScoredCandidate], list[ProcessingError]]:
+def rank_candidates(results: list[Result]) -> list[ScoredCandidate]:
+    """The scored candidates, best first. The project's one definition of rank.
+
+    Every output ranks the same way because every output comes through here:
+    results.json, results.csv and report.md via `_split` below, and the
+    `--deep-dive-top` selection in main.py, which needs the ranking before the
+    reporter runs.
+
+    Ties break on `source_file` ascending. Sorting on score alone would still
+    be deterministic for the CLI — a stable sort over a filename-sorted input
+    list lands in the same place — but that is two facts in two files holding
+    each other up, and rank now decides which candidates a paid LLM call is
+    spent on. Naming the tiebreak makes the order a property of this function
+    instead, and makes app.py (whose input is upload order) deterministic too.
+    """
+
     candidates = [r for r in results if isinstance(r, ScoredCandidate)]
+    candidates.sort(key=lambda c: (-c.overall_fit.score, c.source_file))
+    return candidates
+
+
+def _split(results: list[Result]) -> tuple[list[ScoredCandidate], list[ProcessingError]]:
     errors = [r for r in results if isinstance(r, ProcessingError)]
-    candidates.sort(key=lambda c: c.overall_fit.score, reverse=True)
-    return candidates, errors
+    return rank_candidates(results), errors
 
 
 def write_json(results: list[Result], path: str | Path) -> None:
@@ -200,6 +224,31 @@ def _histogram_lines(counts: list[int], failed: int) -> list[str]:
     return lines
 
 
+def _deep_dive_lines(report: DeepDiveReport) -> list[str]:
+    """Render one candidate's hiring-manager briefing as markdown.
+
+    Bullets rather than a table: pros, cons and questions are free prose from
+    the model, and a `|` in any of them would break a table's layout. Bullets
+    have no such failure mode, so nothing here needs escaping.
+    """
+
+    lines: list[str] = ["**Hiring Manager Deep-Dive**", "", report.summary, ""]
+
+    for heading, items in (
+        ("Strengths", report.pros),
+        ("Risks", report.cons),
+        ("Suggested interview questions", report.interview_questions),
+    ):
+        if not items:
+            continue
+        lines.append(f"_{heading}_")
+        lines.append("")
+        lines.extend(f"- {item}" for item in items)
+        lines.append("")
+
+    return lines
+
+
 def _bias_drift_table(audit: BiasAuditReport) -> list[str]:
     """Render the bias audit as a markdown drift table for one candidate."""
     dims = ("skills_match", "experience_match", "role_relevance", "overall_fit")
@@ -249,8 +298,15 @@ def write_markdown(
     path: str | Path,
     jd_path: str | Path,
     audits: dict[str, BiasAuditReport] | None = None,
+    deep_dives: dict[str, DeepDiveReport] | None = None,
 ) -> None:
-    """Write a markdown report: ranked table + per-candidate breakdowns + errors."""
+    """Write a markdown report: ranked table + per-candidate breakdowns + errors.
+
+    `audits` and `deep_dives` are both optional sidecars keyed by `source_file`,
+    holding entries only for the candidates that received one. Both default to
+    None, so a caller that doesn't use them writes exactly the report it always
+    did.
+    """
 
     candidates, errors = _split(results)
 
@@ -303,6 +359,12 @@ def write_markdown(
             for gap in c.gaps:
                 lines.append(f"- _{gap.category}_ — {gap.detail}")
             lines.append("")
+
+        # Scores and gaps are the evidence; the briefing is the reading of it,
+        # so it follows them. Candidates outside the top N get nothing here —
+        # no placeholder, same as a candidate with no bias audit.
+        if deep_dives and c.source_file in deep_dives:
+            lines.extend(_deep_dive_lines(deep_dives[c.source_file]))
 
         if audits and c.source_file in audits:
             lines.extend(_bias_drift_table(audits[c.source_file]))

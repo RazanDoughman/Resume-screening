@@ -7,9 +7,16 @@ from anthropic import Anthropic
 
 from src.bias_auditor import VARIANT_DISPLAY_LABELS, run_bias_audit
 from src.critique import critique_and_maybe_revise
+from src.deep_dive import generate_deep_dive
 from src.extractor import DEFAULT_MODEL, extract_candidate
-from src.models import BiasAuditReport, ProcessingError, ScoredCandidate
+from src.models import (
+    BiasAuditReport,
+    DeepDiveReport,
+    ProcessingError,
+    ScoredCandidate,
+)
 from src.pdf_parser import parse_pdf
+from src.reporter import rank_candidates
 from src.scorer import score_candidate
 from src.usage import MeteredClient, UsageTracker, build_report, format_summary
 
@@ -76,6 +83,17 @@ with st.sidebar:
             "(name, graduation year) and reports score drift per dimension."
         ),
     )
+    deep_dive_top = st.number_input(
+        "Deep-dive top N candidates",
+        min_value=0,
+        value=0,
+        step=1,
+        help=(
+            "Write a hiring-manager briefing (summary, pros, cons, interview "
+            "questions) for the top N ranked candidates. Adds N LLM calls in "
+            "total, not N per resume. 0 disables it."
+        ),
+    )
 
 # ── File uploads ──
 col1, col2 = st.columns(2)
@@ -139,12 +157,31 @@ if st.button("Match Resumes", type="primary"):
     progress.progress(1.0, text="Done!")
 
     # ── Split results into scored candidates and errors ──
-    scored_pairs = [(r, a) for r, a in pairs if isinstance(r, ScoredCandidate)]
-    errors = [r for r, _ in pairs if isinstance(r, ProcessingError)]
+    # Ranking comes from reporter.rank_candidates so the UI, the CLI and every
+    # written report order candidates by the same rule, ties included.
+    results = [r for r, _ in pairs]
+    audits_by_file = {
+        r.source_file: a
+        for r, a in pairs
+        if isinstance(r, ScoredCandidate) and a is not None
+    }
+    errors = [r for r in results if isinstance(r, ProcessingError)]
+    scored = rank_candidates(results)
+    scored_pairs = [(c, audits_by_file.get(c.source_file)) for c in scored]
 
-    # Sort by overall score, highest first
-    scored_pairs.sort(key=lambda x: x[0].overall_fit.score, reverse=True)
-    scored = [r for r, _ in scored_pairs]
+    # ── Deep-dive the top N (post-scoring, same client, so it's metered) ──
+    deep_dives: dict[str, DeepDiveReport] = {}
+    if deep_dive_top > 0 and scored:
+        selected = scored[: int(deep_dive_top)]
+        with st.spinner(f"Writing deep-dive briefings for the top {len(selected)}..."):
+            for c in selected:
+                try:
+                    deep_dives[c.source_file] = generate_deep_dive(
+                        client, c, jd_text, model=model
+                    )
+                except Exception as e:
+                    # Enrichment only — the scored candidate stays valid.
+                    st.warning(f"Deep-dive failed for {c.source_file}: {e}")
 
     # ── Display ranked candidates ──
     if scored:
@@ -183,6 +220,21 @@ if st.button("Match Resumes", type="primary"):
                     st.write("**Gaps:**")
                     for gap in c.gaps:
                         st.write(f"- _{gap.category}_: {gap.detail}")
+
+                if c.source_file in deep_dives:
+                    dd = deep_dives[c.source_file]
+                    st.write("---")
+                    st.write("**Hiring Manager Deep-Dive**")
+                    st.write(dd.summary)
+                    for heading, items in (
+                        ("Strengths", dd.pros),
+                        ("Risks", dd.cons),
+                        ("Suggested interview questions", dd.interview_questions),
+                    ):
+                        if items:
+                            st.write(f"_{heading}_")
+                            for item in items:
+                                st.write(f"- {item}")
 
                 if audit:
                     st.write("---")
