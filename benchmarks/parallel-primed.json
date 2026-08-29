@@ -1,0 +1,778 @@
+{
+  "label": "parallel-primed",
+  "captured_at": "2026-08-29T21:42:54+03:00",
+  "configuration": {
+    "jd": "sample_data/sample_jd.txt",
+    "resumes_dir": "sample_data/resumes",
+    "n_resumes": 10,
+    "model": "claude-sonnet-4-6",
+    "deep_dive_top": 3,
+    "self_critique": false,
+    "bias_audit": false,
+    "csv": false,
+    "concurrency": 5
+  },
+  "runs": [
+    {
+      "run": 1,
+      "elapsed_seconds": 126.17,
+      "call_count": 23,
+      "models": [
+        "claude-sonnet-4-6"
+      ],
+      "input_tokens": 21926,
+      "cache_read_input_tokens": 18729,
+      "cache_creation_input_tokens": 3530,
+      "total_prompt_tokens": 44185,
+      "output_tokens": 13603,
+      "estimated_cost_usd": 0.288679,
+      "cache_prefixes": {
+        "1667": {
+          "writes": 1,
+          "reads": 9
+        },
+        "1863": {
+          "writes": 1,
+          "reads": 2
+        }
+      },
+      "uncached_calls": 10,
+      "calls": [
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1490,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 490
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 485,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 1667,
+          "output_tokens": 523
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1346,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 303
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1372,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 330
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1467,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 478
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1463,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 467
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1462,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 461
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 473,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 519
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 464,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 547
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 315,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 692
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 458,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 575
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 344,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 766
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1419,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 432
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1449,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 408
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1407,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 379
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1517,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 541
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 540,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 506
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 416,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 719
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 445,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 631
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 429,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 754
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1048,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 1863,
+          "output_tokens": 1124
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1041,
+          "cache_read_input_tokens": 1863,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 976
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1076,
+          "cache_read_input_tokens": 1863,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 982
+        }
+      ],
+      "valid": true
+    },
+    {
+      "run": 2,
+      "elapsed_seconds": 127.12,
+      "call_count": 23,
+      "models": [
+        "claude-sonnet-4-6"
+      ],
+      "input_tokens": 21960,
+      "cache_read_input_tokens": 22259,
+      "cache_creation_input_tokens": 0,
+      "total_prompt_tokens": 44219,
+      "output_tokens": 13922,
+      "estimated_cost_usd": 0.281388,
+      "cache_prefixes": {
+        "1667": {
+          "writes": 0,
+          "reads": 10
+        },
+        "1863": {
+          "writes": 0,
+          "reads": 3
+        }
+      },
+      "uncached_calls": 10,
+      "calls": [
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1490,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 490
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 485,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 513
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1372,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 328
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1346,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 303
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1467,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 478
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1463,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 467
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1462,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 461
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 473,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 592
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 464,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 546
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 315,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 729
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 342,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 730
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 458,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 645
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1419,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 432
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1407,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 419
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1449,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 448
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1517,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 541
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 540,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 510
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 445,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 632
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 416,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 780
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 429,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 758
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1036,
+          "cache_read_input_tokens": 1863,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 1047
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1051,
+          "cache_read_input_tokens": 1863,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 1000
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1114,
+          "cache_read_input_tokens": 1863,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 1073
+        }
+      ],
+      "valid": true
+    },
+    {
+      "run": 3,
+      "elapsed_seconds": 76.11,
+      "call_count": 20,
+      "models": [
+        "claude-sonnet-4-6"
+      ],
+      "input_tokens": 18759,
+      "cache_read_input_tokens": 16670,
+      "cache_creation_input_tokens": 0,
+      "total_prompt_tokens": 35429,
+      "output_tokens": 10671,
+      "estimated_cost_usd": 0.221343,
+      "cache_prefixes": {
+        "1667": {
+          "writes": 0,
+          "reads": 10
+        }
+      },
+      "uncached_calls": 10,
+      "calls": [
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1490,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 490
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 485,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 473
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1346,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 303
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1372,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 328
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1463,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 467
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1467,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 478
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1462,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 461
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 464,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 474
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 473,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 544
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 315,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 730
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 458,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 670
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1419,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 432
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 342,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 829
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1407,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 379
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1449,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 448
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1517,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 541
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 429,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 727
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 445,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 623
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 416,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 734
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 540,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 540
+        }
+      ],
+      "valid": false,
+      "excluded_reason": "Incomplete: the Anthropic account exhausted its credit balance during the deep-dive stage. All three deep-dive calls returned HTTP 400 invalid_request_error ('credit balance is too low'), which is not retryable and raises before a response exists, so no usage was recorded for them: 20 metered calls instead of 23, with the deep-dive prefix absent and the elapsed time missing the entire deep-dive stage. Kept as evidence; excluded from every summary statistic."
+    },
+    {
+      "run": 4,
+      "elapsed_seconds": 130.5,
+      "call_count": 23,
+      "models": [
+        "claude-sonnet-4-6"
+      ],
+      "input_tokens": 21966,
+      "cache_read_input_tokens": 18729,
+      "cache_creation_input_tokens": 3530,
+      "total_prompt_tokens": 44225,
+      "output_tokens": 14176,
+      "estimated_cost_usd": 0.297394,
+      "cache_prefixes": {
+        "1667": {
+          "writes": 1,
+          "reads": 9
+        },
+        "1863": {
+          "writes": 1,
+          "reads": 2
+        }
+      },
+      "uncached_calls": 10,
+      "calls": [
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1490,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 490
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 485,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 1667,
+          "output_tokens": 526
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1346,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 303
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1372,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 330
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1467,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 478
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1463,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 467
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1462,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 461
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 464,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 524
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 458,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 649
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 315,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 777
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 473,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 606
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 344,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 783
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1419,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 432
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1407,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 419
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1449,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 448
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1517,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 541
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 445,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 648
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 429,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 721
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 540,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 520
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 416,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 726
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1051,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 1863,
+          "output_tokens": 1081
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1026,
+          "cache_read_input_tokens": 1863,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 1126
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1128,
+          "cache_read_input_tokens": 1863,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 1120
+        }
+      ],
+      "valid": true,
+      "replaces_run": 3,
+      "captured_at": "2026-08-29T22:42:47+03:00"
+    }
+  ],
+  "summary": {
+    "median_elapsed_seconds": 127.12,
+    "elapsed_seconds": [
+      126.17,
+      127.12,
+      130.5
+    ],
+    "min_elapsed_seconds": 126.17,
+    "max_elapsed_seconds": 130.5,
+    "range_seconds": 4.33,
+    "valid_runs": [
+      1,
+      2,
+      4
+    ],
+    "excluded_runs": [
+      3
+    ],
+    "stable_across_runs": {
+      "call_count": true,
+      "input_tokens": false,
+      "cache_read_input_tokens": false,
+      "cache_creation_input_tokens": false,
+      "total_prompt_tokens": false
+    }
+  },
+  "notes": "Merged artifact. Runs 1-3 came from one harness invocation on 2026-08-29T21:42:54+03:00; run 3 was invalidated by credit exhaustion and run 4 replaces it, captured separately on 2026-08-29T22:42:47+03:00 at the identical configuration. The 'valid', 'excluded_reason', 'replaces_run' and 'captured_at' run-level keys, and the min/max/range/valid_runs/excluded_runs summary keys, are NOT emitted by scripts/benchmark.py - it summarizes every run of a single invocation and has no concept of an invalidated run. Re-running the harness with --label parallel-primed would overwrite these annotations. The unedited harness output for run 4 is preserved at benchmarks/parallel-primed-replacement.json."
+}

@@ -36,8 +36,15 @@ python main.py --jd sample_data/sample_jd.txt --resumes sample_data/resumes/ --d
 # Run the Streamlit web UI
 uv run streamlit run app.py
 
+# Override the concurrency limit (default 5; 1 = sequential)
+python main.py --jd ... --resumes ... --concurrency 5
+
 # Unit tests (no LLM calls, fast)
 uv run pytest
+
+# Benchmark one pipeline configuration (PAID — makes real API calls)
+uv run python -m scripts.benchmark --label sequential --concurrency 1
+uv run python -m scripts.benchmark --dry-run    # prints the plan, spends nothing
 
 # Run a single test
 uv run pytest tests/test_pdf_parser.py
@@ -61,7 +68,7 @@ Requires `ANTHROPIC_API_KEY` in a `.env` file (loaded via `python-dotenv`). See 
 **Core pattern repeated in every LLM module:** define a tool from a Pydantic model's JSON schema -> force Claude to call it via `tool_choice` -> validate the response back into a Pydantic object. This appears in `extractor.py`, `scorer.py`, `critique.py`, and the optional summarization call in `bias_auditor.py`.
 
 **Two entry points:**
-- `main.py` — CLI that loops over resume PDFs sequentially
+- `main.py` — CLI that processes resume PDFs concurrently (`--concurrency`, default 5)
 - `app.py` — Streamlit web UI with file upload
 
 Both entry points define their own `process_one()` that wires the same parse → extract → score (→ critique) (→ bias audit) pipeline. They are **not** sharing a helper — if you change the pipeline shape, update both files. Both `main.py` and `app.py` return `tuple[Result, BiasAuditReport | None]` from `process_one()` and fully support bias audit.
@@ -112,4 +119,13 @@ Both entry points define their own `process_one()` that wires the same parse →
 - **`usage.input_tokens` is the uncached input only.** The real prompt size is `input_tokens + cache_creation_input_tokens + cache_read_input_tokens`, exposed as `total_prompt_tokens`. Both cache fields are `Optional[int]` in the SDK and arrive as `None` on uncached calls; `APIUsage.from_response()` is the single place that normalizes them to `0`. Report cached *token counts* — the API gives no cache-hit event count, so don't invent one.
 - Pricing lives in `MODEL_PRICING` in `src/usage.py` as a plain dict of `Decimal` rates, with a comment recording the official source URL and the date verified. It is deliberately not a YAML config: unlike `dimensions.yaml` it has one consumer and changing it alters no model behavior. Update the date whenever you touch the numbers. Cost is computed per record from `response.model` (the *resolved* model, not the requested one) and is always called an **estimate**; an unknown model yields `None`, never `0.0`.
 - `MeteredClient` is passed where the pipeline annotates `client: Anthropic`. That mismatch is intentional and harmless — annotations aren't enforced here, and `.messages` is the only client attribute any pipeline module touches. Widening those annotations would mean editing five files to satisfy a hint nothing checks.
+- **The unit of concurrency is one candidate.** A worker owns `parse → extract → score (→ critique) (→ bias audit)` — that is `process_one()`, unchanged and unsplit. Do not parallelize stages *within* a candidate and do not nest pools. Ranking, top-N selection, the deep-dive stage, `build_report()` and every file write stay sequential, after the pool drains, because each needs the whole field.
+- **Prime, then fan out.** The first resume is processed alone; only then do the rest go through `ThreadPoolExecutor(max_workers=concurrency)`. `scorer.py`'s JD prefix is written by the first scoring call of a run, and starting cold at concurrency 5 measured **4 cache writes instead of 1** — the first wave races. Running one candidate first fixes it with ordering alone, costing ~10s and eliminating 3 redundant writes. Do not replace this with all-at-once concurrency without new benchmark evidence, and do not "improve" it into a warm-up request, a `max_tokens: 0` call, or a score latch — all were considered and rejected (see `prompts/challenge6.md`). If the primer fails, the batch fans out anyway: a failed prime degrades cost, never correctness.
+- **Deep-dive stays sequential on purpose.** It has its own separate cached prefix, and a pool around it would reintroduce upstream's race. It was also the experimental control that isolated concurrency as the cause of the scorer's cache behavior.
+- **Threads, not asyncio.** Every pipeline function is synchronous, `pdfplumber` blocks, `MeteredClient` wraps a sync client, and the tests are sync `MagicMock`. Async would touch six modules, both entry points and three test files to reach identical throughput at this request volume. Don't convert isolated paths casually.
+- **Execution is concurrent; collection is deterministic.** Futures are submitted together and read back in *submission order* — never `as_completed()`. Scored candidates would survive either way (`rank_candidates()` re-sorts), but `ProcessingError` entries are emitted in list order by the reporter, so completion-order collection would shuffle `results.json`'s `errors` array and the "Could not process" table between runs of identical input; same for `audits` insertion order, which `bias_audit.json` iterates. No original-index field is needed — submission order is the index. Workers return their outcome and mutate nothing shared: `results`, `audits` and all printing belong to the collecting thread.
+- **One shared, lock-protected `UsageTracker`.** One `Anthropic`, one `MeteredClient`, one tracker for every worker. `record()`'s append and the `records` snapshot are guarded by a `threading.Lock`; `APIUsage.from_response()` runs outside it. Do not add per-worker trackers, a merge API, running totals, worker IDs, or sequence numbers. Under concurrency the `calls` array in `usage.json` is in completion order and is no longer a chronological trace — totals, cost and models are all order-independent, so leave it; run sequentially if you need the trace.
+- **`main.py` and `app.py` both implement this, separately.** Neither shares a helper, per the rule above, so a change to the concurrency shape must land in both. `tests/test_app_parity.py` inspects `app.py`'s source (an established pattern — see `tests/test_deep_dive.py`) and fails if the two drift on priming, pool count, `as_completed`, or the concurrency default.
+- **Challenge 6 performance numbers are benchmark observations, not guarantees.** They come from one fixed configuration (10 sample resumes, `sample_data/sample_jd.txt`, `claude-sonnet-4-6`, `deep_dive_top=3`) on one machine, recorded in `benchmarks/*.json` and written up in `prompts/challenge6.md`. Don't generalize them, and don't re-derive them from a different input set without saying so. `benchmarks/parallel-naive.json` records a code state that no longer exists — priming is unconditional, so that arm is not reproducible from the current tree without reverting it. A `--no-prime` flag was deliberately not added.
+- `scripts/benchmark.py` owns wall-clock timing and is not part of the pipeline. Timing must never move into `src/usage.py`, `UsageReport`, or `usage.json`: that module records one normalized record per API *response*, and elapsed time is a property of a *run*.
 - Per `CONTRIBUTING.MD`, prompts are treated as the teaching artifact: any prompt change should be visible in the PR description (or saved under `prompts/`), and new conventions should be reflected back into this file.

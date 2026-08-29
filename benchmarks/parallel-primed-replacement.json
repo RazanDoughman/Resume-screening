@@ -1,0 +1,218 @@
+{
+  "label": "parallel-primed-replacement",
+  "captured_at": "2026-08-29T22:42:47+03:00",
+  "configuration": {
+    "jd": "sample_data/sample_jd.txt",
+    "resumes_dir": "sample_data/resumes",
+    "n_resumes": 10,
+    "model": "claude-sonnet-4-6",
+    "deep_dive_top": 3,
+    "self_critique": false,
+    "bias_audit": false,
+    "csv": false,
+    "concurrency": 5
+  },
+  "runs": [
+    {
+      "run": 1,
+      "elapsed_seconds": 130.5,
+      "call_count": 23,
+      "models": [
+        "claude-sonnet-4-6"
+      ],
+      "input_tokens": 21966,
+      "cache_read_input_tokens": 18729,
+      "cache_creation_input_tokens": 3530,
+      "total_prompt_tokens": 44225,
+      "output_tokens": 14176,
+      "estimated_cost_usd": 0.297394,
+      "cache_prefixes": {
+        "1667": {
+          "writes": 1,
+          "reads": 9
+        },
+        "1863": {
+          "writes": 1,
+          "reads": 2
+        }
+      },
+      "uncached_calls": 10,
+      "calls": [
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1490,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 490
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 485,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 1667,
+          "output_tokens": 526
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1346,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 303
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1372,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 330
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1467,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 478
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1463,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 467
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1462,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 461
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 464,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 524
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 458,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 649
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 315,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 777
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 473,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 606
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 344,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 783
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1419,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 432
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1407,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 419
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1449,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 448
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1517,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 541
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 445,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 648
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 429,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 721
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 540,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 520
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 416,
+          "cache_read_input_tokens": 1667,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 726
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1051,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 1863,
+          "output_tokens": 1081
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1026,
+          "cache_read_input_tokens": 1863,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 1126
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "input_tokens": 1128,
+          "cache_read_input_tokens": 1863,
+          "cache_creation_input_tokens": 0,
+          "output_tokens": 1120
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "median_elapsed_seconds": 130.5,
+    "elapsed_seconds": [
+      130.5
+    ],
+    "stable_across_runs": {
+      "call_count": true,
+      "input_tokens": true,
+      "cache_read_input_tokens": true,
+      "cache_creation_input_tokens": true,
+      "total_prompt_tokens": true
+    }
+  }
+}

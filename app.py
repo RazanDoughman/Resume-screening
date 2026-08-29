@@ -1,5 +1,6 @@
 import os
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 
 import streamlit as st
 from dotenv import load_dotenv
@@ -23,6 +24,17 @@ from src.usage import MeteredClient, UsageTracker, build_report, format_summary
 load_dotenv()
 
 Result = ScoredCandidate | ProcessingError
+
+
+def _to_temp_pdf(uploaded) -> str:
+    """Write one Streamlit upload to a temp file and return its path.
+
+    pdfplumber reads from a path, not a buffer. The caller owns deletion.
+    """
+
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+        tmp.write(uploaded.read())
+        return tmp.name
 
 
 def process_one(
@@ -94,6 +106,17 @@ with st.sidebar:
             "total, not N per resume. 0 disables it."
         ),
     )
+    concurrency = st.number_input(
+        "Resumes processed at once",
+        min_value=1,
+        value=5,
+        step=1,
+        help=(
+            "How many resumes may be processed simultaneously. Higher is "
+            "faster and makes no extra LLM calls; 1 processes them one at a "
+            "time. Matches the CLI's --concurrency default of 5."
+        ),
+    )
 
 # ── File uploads ──
 col1, col2 = st.columns(2)
@@ -132,27 +155,61 @@ if st.button("Match Resumes", type="primary"):
 
     # Process each resume. MeteredClient records the `usage` field of every
     # response so we can show the run's token counts and estimated cost below.
+    # One client and one tracker for the whole run, shared by every worker —
+    # the tracker is lock-protected, so concurrency needs nothing extra here.
     tracker = UsageTracker()
     client = MeteredClient(Anthropic(), tracker)
     pairs: list[tuple[Result, BiasAuditReport | None]] = []
     progress = st.progress(0, text="Processing resumes...")
 
-    for i, resume_file in enumerate(resume_files):
-        progress.progress(
-            i / len(resume_files),
-            text=f"Processing {resume_file.name} ({i + 1}/{len(resume_files)})...",
+    # Save every upload to a temp file first, on this thread. Reading an
+    # UploadedFile is Streamlit's business, not a worker's, and pdfplumber needs
+    # a real path either way. They are all removed in the `finally` below, which
+    # also covers the case where something raises mid-batch.
+    jobs = [(f.name, _to_temp_pdf(f)) for f in resume_files]
+
+    def accept(index: int, name: str, outcome: tuple[Result, BiasAuditReport | None]) -> None:
+        """Record and announce one finished candidate. Main thread only.
+
+        Workers return their outcome and touch nothing shared; `pairs` and the
+        progress bar are only ever mutated here. That matters twice over in
+        Streamlit: it keeps `pairs` lock-free, and it keeps every `st.*` call on
+        the thread that owns the script's run context.
+        """
+
+        pairs.append(outcome)
+        progress.progress(index / len(jobs), text=f"Processed {name} ({index}/{len(jobs)})")
+
+    try:
+        # Same architecture as main.py, and for the same measured reason: the
+        # first candidate runs alone so its scoring call writes the job
+        # description's cached prefix before the rest fan out. Starting cold at
+        # concurrency 5 had four of the first five scoring calls race and each
+        # write its own copy. See prompts/challenge6.md.
+        first_name, first_path = jobs[0]
+        accept(
+            1,
+            first_name,
+            process_one(
+                client, first_path, first_name, jd_text, model, self_critique, bias_audit
+            ),
         )
 
-        # Save uploaded PDF to a temp file so pdfplumber can read it
-        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
-            tmp.write(resume_file.read())
-            tmp_path = tmp.name
-
-        result, audit = process_one(
-            client, tmp_path, resume_file.name, jd_text, model, self_critique, bias_audit
-        )
-        os.unlink(tmp_path)
-        pairs.append((result, audit))
+        # Concurrent execution, deterministic collection: futures are submitted
+        # together but read back in submission order, never `as_completed()`,
+        # so errors and bias-audit entries keep upload order between runs.
+        with ThreadPoolExecutor(max_workers=int(concurrency)) as executor:
+            futures = [
+                executor.submit(
+                    process_one, client, path, name, jd_text, model, self_critique, bias_audit
+                )
+                for name, path in jobs[1:]
+            ]
+            for i, ((name, _), future) in enumerate(zip(jobs[1:], futures), start=2):
+                accept(i, name, future.result())
+    finally:
+        for _, path in jobs:
+            os.unlink(path)
 
     progress.progress(1.0, text="Done!")
 

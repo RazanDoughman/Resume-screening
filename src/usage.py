@@ -36,6 +36,7 @@ a timeout after the SDK's internal retries) has no `usage` to read, so it cannot
 be counted here even though the server may have processed it.
 """
 
+import threading
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Sequence
@@ -133,7 +134,7 @@ class UsageTotals:
 
 
 class UsageTracker:
-    """Collects one APIUsage record per API response.
+    """Collects one APIUsage record per API response. Safe to share across threads.
 
     Deliberately append-only: totals are derived from the records on demand
     rather than maintained as running counters, so there is no read-modify-write
@@ -141,26 +142,55 @@ class UsageTracker:
     a tracker is created per run, which is also what makes two runs in one
     process (and the tests below) work.
 
-    Not synchronized. When concurrency arrives, either guard `record()` with a
-    lock or give each worker its own tracker and pass the concatenated records
-    to `build_report` — which already accepts any sequence.
+    One tracker is shared by every worker, guarded by a lock. `main.py` runs
+    resumes through a thread pool against a single `MeteredClient`, so `record()`
+    is called concurrently. Per-worker trackers were the alternative and were
+    rejected: they would need a merge step and a second client, and would buy
+    nothing that this lock doesn't.
+
+    The lock is explicit rather than leaning on `list.append` being atomic under
+    CPython. Both are correct today; only one of them says so in a way the next
+    reader can check, and only one survives someone later giving this class a
+    field that *is* read-modify-write.
+
+    Cost is irrelevant here — the critical section is a single append, held for
+    nanoseconds, a few dozen times per run, between API calls that take seconds.
+    `APIUsage.from_response()` runs outside the lock on purpose, so parsing one
+    response never blocks another thread from recording its own.
+
+    One consequence worth knowing: under concurrency `records` comes back in
+    completion order, so the `calls` array in usage.json stops being a
+    chronological trace of the pipeline and becomes an unordered bag of billed
+    calls. Every number derived from it — totals, cost, model list — is
+    order-independent, so nothing downstream cares. Don't add sequence numbers
+    to make the array look sorted again; run sequentially if you want the trace.
     """
 
     def __init__(self) -> None:
         self._records: list[APIUsage] = []
+        self._lock = threading.Lock()
 
     def record(self, response: Message) -> APIUsage:
-        """Normalize and store the usage from one response."""
+        """Normalize and store the usage from one response. Thread-safe."""
 
         usage = APIUsage.from_response(response)
-        self._records.append(usage)
+        with self._lock:
+            self._records.append(usage)
         return usage
 
     @property
     def records(self) -> tuple[APIUsage, ...]:
-        """An immutable snapshot — callers can't mutate the tracker's state."""
+        """An immutable snapshot — callers can't mutate the tracker's state.
 
-        return tuple(self._records)
+        Locked as well as `record()`. In practice this is read once, after every
+        worker has finished, so it would be safe either way; taking the lock
+        keeps the rule "all access to `_records` goes through `_lock`" true
+        without exceptions, which is the version that stays correct when someone
+        later reads usage mid-run.
+        """
+
+        with self._lock:
+            return tuple(self._records)
 
 
 # ---------------------------------------------------------------------------
