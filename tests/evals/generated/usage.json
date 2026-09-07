@@ -1,0 +1,46 @@
+{
+  "call_count": 4,
+  "models": [
+    "claude-sonnet-4-6"
+  ],
+  "totals": {
+    "input_tokens": 585,
+    "cache_read_input_tokens": 9648,
+    "cache_creation_input_tokens": 3216,
+    "total_prompt_tokens": 13449,
+    "output_tokens": 5344
+  },
+  "estimated_cost_usd": 0.096869,
+  "unpriced_models": [],
+  "pricing_note": "Estimated from a local pricing table (Anthropic list prices, standard tier, 5-minute cache TTL). Not an invoice.",
+  "calls": [
+    {
+      "model": "claude-sonnet-4-6",
+      "input_tokens": 122,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3216,
+      "output_tokens": 1726
+    },
+    {
+      "model": "claude-sonnet-4-6",
+      "input_tokens": 117,
+      "cache_read_input_tokens": 3216,
+      "cache_creation_input_tokens": 0,
+      "output_tokens": 1137
+    },
+    {
+      "model": "claude-sonnet-4-6",
+      "input_tokens": 118,
+      "cache_read_input_tokens": 3216,
+      "cache_creation_input_tokens": 0,
+      "output_tokens": 1173
+    },
+    {
+      "model": "claude-sonnet-4-6",
+      "input_tokens": 228,
+      "cache_read_input_tokens": 3216,
+      "cache_creation_input_tokens": 0,
+      "output_tokens": 1308
+    }
+  ]
+}

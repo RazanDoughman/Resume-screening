@@ -6,11 +6,17 @@ instead of exact scores because LLM output varies a few points from call
 to call — a strong-match candidate should reliably land in 80-100, but
 "exactly 87" isn't a test we can pass reliably.
 
-To add a new case, append another EvalCase to ALL_CASES at the bottom.
+To add a new case, append another EvalCase to HANDWRITTEN_CASES below.
 To add a bias stability case, append a BiasAuditEvalCase to ALL_BIAS_CASES.
+
+Generated cases (Challenge 7) are not written here. They live as data in
+tests/evals/generated_cases.json and are merged into ALL_CASES only after a
+human has marked them reviewed — see the comment above GENERATED_CASES.
 """
 
 from dataclasses import dataclass
+
+from src.generated_cases import load_eval_case_kwargs
 
 
 @dataclass
@@ -185,12 +191,40 @@ BS Computer Science, Georgia Tech.
 )
 
 
-ALL_CASES: list[EvalCase] = [
+HANDWRITTEN_CASES: list[EvalCase] = [
     STRONG_MATCH,
     WEAK_MATCH,
     MIXED_MATCH,
     CAREER_CHANGER_MATCH,
 ]
+
+
+# Generated cases that a human has reviewed and approved (Challenge 7).
+#
+# `load_eval_case_kwargs()` reads tests/evals/generated_cases.json and returns
+# only the cases whose `reviewed` flag is True. An unreviewed case is dropped
+# there, by code — not by anyone remembering to leave it out — so a generated
+# resume cannot reach this list until a person has read it and accepted its
+# expected ranges. On a fresh checkout the file does not exist and this is
+# empty.
+#
+# What comes back is plain `EvalCase` kwargs. Review state, the level the
+# resume was generated at, and the range the generator proposed all stop at
+# that boundary: below this line a generated case is an `EvalCase` like any
+# other, and neither `run_case()` nor the scorer can tell the difference.
+# That is deliberate — where a case came from must not change how it is scored.
+#
+# Hand-written names are passed in as reserved so a generated case cannot
+# shadow one; a collision raises rather than silently replacing a case.
+GENERATED_CASES: list[EvalCase] = [
+    EvalCase(**kwargs)
+    for kwargs in load_eval_case_kwargs(
+        reserved_names=[case.name for case in HANDWRITTEN_CASES]
+    )
+]
+
+
+ALL_CASES: list[EvalCase] = [*HANDWRITTEN_CASES, *GENERATED_CASES]
 
 
 # ---------------------------------------------------------------------------

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A teaching project that scores resume PDFs against a job description using the Claude API. Each resume goes through a pipeline: PDF parse -> structured extraction (LLM) -> scoring (LLM) -> optional self-critique (LLM) -> optional bias audit (LLM × N swaps). After the whole batch is scored, an optional deep-dive stage ranks the field and writes a hiring-manager briefing for the top N candidates (LLM × N selected). Output is a ranked JSON file, markdown report, token/cost usage JSON, optional CSV export, and optional bias audit JSON.
+A teaching project that scores resume PDFs against a job description using the Claude API. Each resume goes through a pipeline: PDF parse -> structured extraction (LLM) -> scoring (LLM) -> optional self-critique (LLM) -> optional bias audit (LLM × N swaps). After the whole batch is scored, an optional deep-dive stage ranks the field and writes a hiring-manager briefing for the top N candidates (LLM × N selected). A separate offline tool (`scripts/gen_eval_cases.py`) generates synthetic resumes at four match levels for a JD, saving them as unreviewed proposals that become eval cases only after a human approves them. Output is a ranked JSON file, markdown report, token/cost usage JSON, optional CSV export, and optional bias audit JSON.
 
 ## Commands
 
@@ -57,6 +57,10 @@ uv run python -m src.evals --bias
 
 # Run only deep-dive eval cases
 uv run python -m src.evals --deep-dive
+
+# Generate synthetic eval-case proposals for a JD (PAID — 4 LLM calls)
+uv run python -m scripts.gen_eval_cases --jd sample_data/sample_jd.txt
+uv run python -m scripts.gen_eval_cases --jd ... --dry-run   # prints the plan, spends nothing
 ```
 
 ## Environment
@@ -93,7 +97,13 @@ Both entry points define their own `process_one()` that wires the same parse →
 - `src/deep_dive.py` — `generate_deep_dive()` and the `_screening_results()` serializer. One LLM call, one candidate, nothing else: no ranking, no file I/O, no rendering, no client construction. `main.py` owns selection and hands it whichever candidate to brief.
 - `src/usage.py` — token accounting and cost estimation. Owns `APIUsage` (one normalized record per API response), `UsageTracker`, `MeteredClient`, `MODEL_PRICING`, `estimate_cost()`, `build_report()`, and `format_summary()`. Imports nothing from the rest of `src`, and writes no files.
 - `src/evals.py` — eval harness runner (scoring cases + bias stability cases)
-- `tests/evals/cases.py` — golden eval cases (`ALL_CASES`), bias stability cases (`ALL_BIAS_CASES`), and deep-dive cases (`ALL_DEEP_DIVE_CASES`)
+- `src/eval_gen.py` — Challenge 7 generation: `generate_resume_proposal()` (one LLM call, one match level) and `generate_proposal_set()` (four levels, sequential). Writes no files, constructs no client.
+- `src/eval_fixtures.py` — writes/reads the raw proposal artifacts under `tests/evals/generated/`. No LLM, no Anthropic import — `reporter.py`'s counterpart for generation.
+- `src/generated_cases.py` — the human-review gate. `promote_proposal()`, `write_generated_cases()`, `load_eval_case_kwargs()`. No LLM.
+- `scripts/gen_eval_cases.py` — Challenge 7 CLI. The only place that builds an `Anthropic()` for generation.
+- `tests/evals/cases.py` — `HANDWRITTEN_CASES` (hand-written), `GENERATED_CASES` (reviewed generated), `ALL_CASES` = both; plus `ALL_BIAS_CASES` and `ALL_DEEP_DIVE_CASES`
+- `tests/evals/generated_cases.json` — reviewed generated cases (the promotion output)
+- `tests/evals/generated/` — raw unreviewed proposals (generator provenance)
 
 ## Design conventions
 
@@ -128,4 +138,9 @@ Both entry points define their own `process_one()` that wires the same parse →
 - **`main.py` and `app.py` both implement this, separately.** Neither shares a helper, per the rule above, so a change to the concurrency shape must land in both. `tests/test_app_parity.py` inspects `app.py`'s source (an established pattern — see `tests/test_deep_dive.py`) and fails if the two drift on priming, pool count, `as_completed`, or the concurrency default.
 - **Challenge 6 performance numbers are benchmark observations, not guarantees.** They come from one fixed configuration (10 sample resumes, `sample_data/sample_jd.txt`, `claude-sonnet-4-6`, `deep_dive_top=3`) on one machine, recorded in `benchmarks/*.json` and written up in `prompts/challenge6.md`. Don't generalize them, and don't re-derive them from a different input set without saying so. `benchmarks/parallel-naive.json` records a code state that no longer exists — priming is unconditional, so that arm is not reproducible from the current tree without reverting it. A `--no-prime` flag was deliberately not added.
 - `scripts/benchmark.py` owns wall-clock timing and is not part of the pipeline. Timing must never move into `src/usage.py`, `UsageReport`, or `usage.json`: that module records one normalized record per API *response*, and elapsed time is a property of a *run*.
+- **Generated eval metadata is a proposal, never ground truth.** `GeneratedResumeProposal` carries the level, score range and dimension hints the *generator* was aiming for. `promote_proposal()` requires `expected_ranges` from the caller and never reads the proposal's own range — that range is stored beside it as `proposed_score_range`, for comparison only. Using it would let the generator write the resume, set the passing grade, and be graded against it. The qualitative `dimensions_expected_high`/`_low` lists are never converted into numeric ranges; there is no honest arithmetic for that.
+- **`reviewed` gates the eval suite, in code.** `load_eval_case_kwargs()` is the only path from `tests/evals/generated_cases.json` into `ALL_CASES` and it filters on `reviewed` with no override; `reviewed` is keyword-only on `promote_proposal()` and defaults to `False`. Unreviewed cases stay loadable (a reviewer must read them) but cannot reach the runner. **Do not add `reviewed` to `EvalCase`** — review is an ingestion concern, and the runner receives a plain `EvalCase` that cannot be told apart from a hand-written one.
+- **Raw proposals and reviewed cases are separate files on purpose.** `tests/evals/generated/` is generator provenance and is never edited; `tests/evals/generated_cases.json` is the reviewed layer. Do not write review state back into `proposals.json`.
+- **Generation is one level per call, sequential.** All four levels in one response would make them compete for output budget and let the model tune them against each other. Sequential ordering is what lets the four calls share one cached prefix (tool schema + system prompt + JD, breakpoint after the JD) — measured 1 write / 3 reads. Do not add a thread pool. The level order comes from `MatchLevel` via `get_args`, not a second list.
+- **Two generated eval cases fail on purpose.** `generated_partial_payments` and `generated_adversarial_payments` are scorer findings, not stale expectations — a live run reports 6/8. Do not widen their ranges to go green; they should pass as a consequence of fixing the scorer. See `prompts/challenge7.md`.
 - Per `CONTRIBUTING.MD`, prompts are treated as the teaching artifact: any prompt change should be visible in the PR description (or saved under `prompts/`), and new conventions should be reflected back into this file.

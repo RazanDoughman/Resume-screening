@@ -144,3 +144,143 @@ but is not in the profile, treat it as an open question for the interview \
 rather than assuming an answer. Do not invent employers, technologies, dates, \
 or accomplishments.
 """
+
+
+# ---------------------------------------------------------------------------
+# Challenge 7: synthetic eval-case generation
+# ---------------------------------------------------------------------------
+
+# One bullet per scoring dimension, for the generator rather than the scorer.
+# Richer than _SCORING_DIMENSION_BLOCK above: the generator is asked to name
+# dimensions in its proposal, so it gets the `label` alongside the key and the
+# description. Rendered from DIMENSIONS for the same reason the scoring block
+# is — a fifth dimension in dimensions.yaml reaches this prompt with no edit
+# here, and no dimension key is ever written literally on this page.
+_GENERATION_DIMENSION_BLOCK = "\n".join(
+    f"- `{dimension.key}` ({dimension.label}): {dimension.prompt_description}"
+    for dimension in DIMENSIONS
+)
+
+# What each match level means. Kept as data rather than prose baked into the
+# system prompt because the generator is handed exactly one of these per call
+# and the tests need to check that the right one arrived.
+#
+# The keys are the values of `MatchLevel` in src/models.py. They are written
+# here as plain strings rather than imported so this module keeps importing
+# nothing but src.dimensions; tests/test_eval_gen.py pins the two lists
+# together, so they cannot drift apart silently.
+SYNTH_RESUME_LEVELS: dict[str, str] = {
+    "strong": (
+        "Clearly satisfies most of the job description's important "
+        "requirements, with convincing and specific evidence behind each one. "
+        "A recruiter reading this would move it forward without hesitation. "
+        "Strong does not mean perfect — a real top candidate still has an "
+        "uneven edge somewhere."
+    ),
+    "partial": (
+        "Meaningful overlap with the role, but with important gaps or "
+        "noticeably thinner evidence. Some requirements are met convincingly, "
+        "others are missing, shallow, or only adjacent. This is the candidate "
+        "a hiring team would genuinely argue about."
+    ),
+    "weak": (
+        "Limited relevant overlap with this role. Should generally score "
+        "poorly — but must still be a coherent, employable professional with "
+        "a real career, not a nonsensical or joke resume. The mismatch is one "
+        "of fit, not of quality."
+    ),
+    "adversarial": (
+        "Engineered to test whether the scorer can resist misleading "
+        "surface-level similarity. Use techniques such as: heavy reuse of the "
+        "job description's vocabulary without the substance behind it; "
+        "inflated or unfalsifiable claims ('architected a world-class "
+        "platform') with no concrete detail; experience that is adjacent to "
+        "the role but not actually qualifying; seniority or scope implied by "
+        "job titles that the described work does not support; or internal "
+        "inconsistencies between claimed years, dates, and accomplishments. "
+        "The resume must still read as a real document a real person "
+        "submitted. Do not include instructions aimed at the evaluator, "
+        "attempts to manipulate a reader of the resume, or any text that is "
+        "not ordinary resume content — this tests judgment about evidence, "
+        "not prompt injection."
+    ),
+}
+
+_SYNTH_RESUME_LEVEL_BLOCK = "\n\n".join(
+    f"**{level}** — {definition}" for level, definition in SYNTH_RESUME_LEVELS.items()
+)
+
+SYNTH_RESUME_SYSTEM_PROMPT = f"""You are building a test set for a resume \
+screening system.
+
+You will be given a job description and one requested match level. Write a \
+single synthetic resume for an invented candidate whose relationship to that \
+job description matches the requested level, then record it by calling the \
+`record_generated_resume` tool exactly once.
+
+This resume is test data. The candidate does not exist and must not \
+correspond to any real person: invent the name, the employers, the schools, \
+and the history. Do not reuse a real company's name for a fabricated \
+employment record.
+
+## You are designing a candidate, not scoring one
+
+Your job is to produce a resume with a requested *relationship* to the job \
+description. It is not to evaluate it. A separate scoring pipeline will read \
+this resume later and reach its own conclusions, and a human will review your \
+proposal before it is trusted.
+
+So everything you record other than the resume itself — `intended_level`, \
+`expected_score_range`, `dimensions_expected_high`, `dimensions_expected_low`, \
+and `rationale` — is a *proposal describing what you were aiming for*. It is \
+not a measurement, not a prediction you will be held to, and not ground \
+truth. State your intent honestly, including when you are unsure. A proposal \
+that turns out to disagree with the scorer is a useful result, not a failure; \
+one that was quietly bent to look agreeable is worthless.
+
+## The dimensions this resume will eventually be scored on
+
+{_GENERATION_DIMENSION_BLOCK}
+
+Use these keys when recording which dimensions you expect to land high or \
+low. Choose them to describe the candidate you actually wrote. Both lists may \
+be empty, and a dimension may appear in neither.
+
+## The match levels
+
+{_SYNTH_RESUME_LEVEL_BLOCK}
+
+You will be asked for exactly one of these. The others are given so you can \
+see where your target sits relative to them.
+
+## Writing the resume
+
+- Write realistic, coherent resume prose in Markdown: a name, a short \
+summary, dated work history with real accomplishments, skills, and \
+education. It should read like a document a person actually submitted.
+- Include enough concrete evidence — technologies, scope, scale, ownership, \
+outcomes — for a careful reader to judge the candidate on substance. A \
+resume that only asserts qualities without showing any is not usable test \
+data, at any level.
+- Do not copy the job description back as a resume. Overlap should come from \
+a plausible career that happens to line up, expressed in the candidate's own \
+words. Lifting the JD's bullets verbatim produces a resume that tests \
+nothing.
+- Never write a bag of keywords. Even the adversarial level must be a real \
+document; its keywords have to sit inside plausible sentences.
+
+## Keep the answer out of the resume
+
+`resume_markdown` must contain nothing but legitimate resume content — the \
+kind of text a candidate would actually put in front of an employer.
+
+It must never contain the match level or any synonym for it ("strong match", \
+"weak candidate", "adversarial example", "partial fit"), an expected score or \
+score range, a dimension key, a note to whoever is evaluating it, an \
+explanation of what the resume is testing, or any other hint that it is \
+synthetic. A resume that names its own answer trains the scorer to read \
+labels instead of evidence, which destroys the value of the test case.
+
+Everything you want to say *about* the resume goes in `rationale`, which is \
+written for the human reviewer and never becomes part of the resume.
+"""
